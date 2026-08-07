@@ -1,7 +1,35 @@
-# Nexys A7-100T — Frecuencímetro + UART Echo
+# Nexys A7-100T — Proyectos FPGA
 
-Medidor de frecuencia digital sobre FPGA **Xilinx Artix-7 XC7A100T-1CSG324**
-en placa **Digilent Nexys A7-100T**, con eco UART interactivo vía FTDI canal B.
+Placa **Digilent Nexys A7-100T** (Xilinx Artix-7 XC7A100T-1CSG324).
+
+## Proyectos
+
+| Proyecto | Rama | Descripción |
+|----------|------|-------------|
+| **NEORV32 RISC-V** | [`aplicacion`](../../tree/aplicacion/neorv32) | Procesador RV32IMC @ 100 MHz, bootloader UART, hello_world |
+| **Frecuencímetro** | [`aplicacion`](../../tree/aplicacion/src) | Gate 1s calibrado, eco UART con FIFO, display 7-seg |
+
+---
+
+## NEORV32 — Procesador RISC-V en Nexys A7
+
+Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.88 ns).
+
+```bash
+vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream
+openFPGALoader -b nexys_a7_100 -f neorv32/top.bit --unprotect-flash
+# Power-cycle Nexys → bootloader a 19200 baud en ttyUSB1
+```
+
+**Bootloader**: comandos `h`(help), `i`(info), `u`(upload), `e`(execute), `s`(flash program).
+
+**Periféricos**: UART0, GPIO (16 LEDs), CLINT.
+
+---
+
+## Frecuencímetro + UART Echo
+
+Medidor de frecuencia digital con eco UART interactivo.
 
 ## Características
 
