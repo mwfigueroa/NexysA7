@@ -1,0 +1,14 @@
+# Vivado build artifacts
+build/
+*.jou
+*.log
+*.pb
+*.vds
+*.vdi
+*.wdb
+*.dcp
+*.rpt
+*.rpx
+*.bit
+Xil/
+.Xil/
