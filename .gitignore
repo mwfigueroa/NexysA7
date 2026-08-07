@@ -1,0 +1,34 @@
+# Vivado build artifacts
+build/
+sim_out/
+*.jou
+*.log
+*.pb
+*.vds
+*.vdi
+*.wdb
+*.dcp
+*.rpt
+*.rpx
+Xil/
+.Xil/
+*.cache/
+
+# Simulation temp
+*.vvp
+*.vcd
+*.fst
+__pycache__/
+*.pyc
+
+# Temp / large binaries
+temp/
+.lock/
+
+# Editor / OS
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+synth/

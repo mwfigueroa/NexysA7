@@ -1,0 +1,20 @@
+# synth.ys — Yosys synthesis script for Nexys A7 frequency counter
+# Target: Xilinx Artix-7 XC7A100T (xc7a100tcsg324-1)
+# Run:   yosys synth.ys
+
+# ── Read design ────────────────────────────────────────────────────────
+read_verilog ../src/top.v
+hierarchy -check -top top
+
+# ── Synthesis ──────────────────────────────────────────────────────────
+# synth_xilinx runs: proc → memory → opt → techmap → abc → clean
+synth_xilinx -family xc7 -top top
+
+# ── Reports ────────────────────────────────────────────────────────────
+stat -width
+
+# ── Write netlist ──────────────────────────────────────────────────────
+write_verilog -noattr -noexpr -nodec synth/top_netlist.v
+
+# ── Optional: write JSON (useful for nextpnr / custom flows) ──────────
+write_json synth/top.json
