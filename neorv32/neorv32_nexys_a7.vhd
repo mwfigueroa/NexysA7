@@ -26,7 +26,12 @@ entity neorv32_nexys_a7 is
     TWI_SCL    : inout std_logic;
     TWI_SDA    : inout std_logic;
     ENC_A      : in  std_ulogic_vector(7 downto 0);
-    ENC_B      : in  std_ulogic_vector(7 downto 0)
+    ENC_B      : in  std_ulogic_vector(7 downto 0);
+    -- JTAG debug (OCD) — 7-seg cathode pins
+    JTAG_TCK   : in  std_ulogic;  -- R10
+    JTAG_TDI   : in  std_ulogic;  -- K16
+    JTAG_TDO   : out std_ulogic;  -- K13
+    JTAG_TMS   : in  std_ulogic   -- P15
   );
 end entity;
 
@@ -153,7 +158,7 @@ begin
   generic map (
     CLOCK_FREQUENCY     => 100_000_000,
     BOOT_MODE_SELECT    => 0,
-    OCD_EN              => false,
+    OCD_EN              => true,     -- JTAG debug enabled!
     RISCV_ISA_C         => true,
     RISCV_ISA_M         => true,
     RISCV_ISA_Zicntr    => true,
@@ -211,10 +216,10 @@ begin
     twi_scl_i   => twi_scl_i,
     twi_scl_o   => twi_scl_o,
     -- JTAG --
-    jtag_tck_i  => '0',
-    jtag_tdi_i  => '0',
-    jtag_tdo_o  => open,
-    jtag_tms_i  => '0',
+    jtag_tck_i  => JTAG_TCK,
+    jtag_tdi_i  => JTAG_TDI,
+    jtag_tdo_o  => JTAG_TDO,
+    jtag_tms_i  => JTAG_TMS,
     mtime_time_o => open,
     irq_msi_i   => '0',
     irq_mti_i   => '0',

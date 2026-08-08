@@ -81,6 +81,12 @@ set_property -dict {PACKAGE_PIN T10 IOSTANDARD LVCMOS33} [get_ports {ENC_B[6]}]
 set_property -dict {PACKAGE_PIN M18 IOSTANDARD LVCMOS33} [get_ports {ENC_A[7]}]
 set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ENC_B[7]}]
 
+# --- JTAG Debug (OCD) — 7-segment cathode free pins ---
+set_property -dict {PACKAGE_PIN R10 IOSTANDARD LVCMOS33} [get_ports JTAG_TCK]
+set_property -dict {PACKAGE_PIN K16 IOSTANDARD LVCMOS33} [get_ports JTAG_TDI]
+set_property -dict {PACKAGE_PIN K13 IOSTANDARD LVCMOS33} [get_ports JTAG_TDO]
+set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS33} [get_ports JTAG_TMS]
+
 # --- False paths on async inputs ---
 set_false_path -from [get_ports UART_RXD]
 set_false_path -from [get_ports CPU_RESETN]
