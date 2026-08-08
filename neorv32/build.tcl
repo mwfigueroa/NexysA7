@@ -20,7 +20,8 @@ set file_list [string map [list {$NEORV32_HOME} $neorv32_home] $file_list_raw]
 add_files $file_list
 set_property library neorv32 [get_files $file_list]
 
-# Add top-level wrapper (not in neorv32 library — stays in default work)
+# Add top-level wrapper and custom modules (in default work library)
+add_files "$project_dir/neorv32_rov_motors.vhd"
 add_files "$project_dir/neorv32_nexys_a7.vhd"
 
 # Add constraints

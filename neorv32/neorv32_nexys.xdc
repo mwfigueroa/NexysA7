@@ -1,6 +1,6 @@
-# ==============================================================================
-# NEORV32 Nexys A7-100T — Constraints
-# ==============================================================================
+-- ==============================================================================
+-- NEORV32 Nexys A7-100T — Constraints (v3: ROV motors)
+-- ==============================================================================
 
 # --- Clock: 100 MHz oscillator (E3) ---
 set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports CLK100MHZ]
@@ -35,11 +35,7 @@ set_property -dict {PACKAGE_PIN J15 IOSTANDARD LVCMOS33} [get_ports {LED[2]}]
 set_property -dict {PACKAGE_PIN M13 IOSTANDARD LVCMOS33} [get_ports {LED[1]}]
 set_property -dict {PACKAGE_PIN R17 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
 
-# --- Input delay for UART_RXD (asynchronous from FTDI) ---
-set_input_delay -clock [get_clocks sys_clk] -min -add_delay 0.0 [get_ports UART_RXD]
-set_input_delay -clock [get_clocks sys_clk] -max -add_delay 2.0 [get_ports UART_RXD]
-
-# --- PWM[7:0]: PMOD JA (8-channel output) ---
+# --- PWM[7:0]: PMOD JA ---
 set_property -dict {PACKAGE_PIN G13 IOSTANDARD LVCMOS33} [get_ports {PWM[0]}]
 set_property -dict {PACKAGE_PIN B11 IOSTANDARD LVCMOS33} [get_ports {PWM[1]}]
 set_property -dict {PACKAGE_PIN A11 IOSTANDARD LVCMOS33} [get_ports {PWM[2]}]
@@ -49,15 +45,41 @@ set_property -dict {PACKAGE_PIN B18 IOSTANDARD LVCMOS33} [get_ports {PWM[5]}]
 set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports {PWM[6]}]
 set_property -dict {PACKAGE_PIN E15 IOSTANDARD LVCMOS33} [get_ports {PWM[7]}]
 
-# --- SPI host: PMOD JB (SCK=E16, MOSI=F13, MISO=G14, CSN=H13) ---
+# --- SPI host: PMOD JB ---
 set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports SPI_SCK]
 set_property -dict {PACKAGE_PIN F13 IOSTANDARD LVCMOS33} [get_ports SPI_MOSI]
 set_property -dict {PACKAGE_PIN G14 IOSTANDARD LVCMOS33} [get_ports SPI_MISO]
 set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports SPI_CSN]
 
-# --- TWI / I2C: PMOD JC (SCL=U11, SDA=U12) ---
+# --- TWI / I2C: PMOD JC (top 2) ---
 set_property -dict {PACKAGE_PIN U11 IOSTANDARD LVCMOS33} [get_ports TWI_SCL]
 set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports TWI_SDA]
+
+# --- Quadrature Encoders: PMOD JD (ENC0-3) + JC (ENC4-6) + free pins (ENC7) ---
+# ENC0: PMOD JD[0:1] = H4,H1
+set_property -dict {PACKAGE_PIN H4  IOSTANDARD LVCMOS33} [get_ports {ENC_A[0]}]
+set_property -dict {PACKAGE_PIN H1  IOSTANDARD LVCMOS33} [get_ports {ENC_B[0]}]
+# ENC1: PMOD JD[2:3] = G1,H2
+set_property -dict {PACKAGE_PIN G1  IOSTANDARD LVCMOS33} [get_ports {ENC_A[1]}]
+set_property -dict {PACKAGE_PIN H2  IOSTANDARD LVCMOS33} [get_ports {ENC_B[1]}]
+# ENC2: PMOD JD[4:5] = G3,F3
+set_property -dict {PACKAGE_PIN G3  IOSTANDARD LVCMOS33} [get_ports {ENC_A[2]}]
+set_property -dict {PACKAGE_PIN F3  IOSTANDARD LVCMOS33} [get_ports {ENC_B[2]}]
+# ENC3: PMOD JD[6:7] = E2,D2
+set_property -dict {PACKAGE_PIN E2  IOSTANDARD LVCMOS33} [get_ports {ENC_A[3]}]
+set_property -dict {PACKAGE_PIN D2  IOSTANDARD LVCMOS33} [get_ports {ENC_B[3]}]
+# ENC4: PMOD JC[2:3] = V10,V9
+set_property -dict {PACKAGE_PIN V10 IOSTANDARD LVCMOS33} [get_ports {ENC_A[4]}]
+set_property -dict {PACKAGE_PIN V9  IOSTANDARD LVCMOS33} [get_ports {ENC_B[4]}]
+# ENC5: PMOD JC[4:5] = V8,U9
+set_property -dict {PACKAGE_PIN V8  IOSTANDARD LVCMOS33} [get_ports {ENC_A[5]}]
+set_property -dict {PACKAGE_PIN U9  IOSTANDARD LVCMOS33} [get_ports {ENC_B[5]}]
+# ENC6: PMOD JC[6:7] = T9,T10
+set_property -dict {PACKAGE_PIN T9  IOSTANDARD LVCMOS33} [get_ports {ENC_A[6]}]
+set_property -dict {PACKAGE_PIN T10 IOSTANDARD LVCMOS33} [get_ports {ENC_B[6]}]
+# ENC7: free button pins (BTNU=M18, BTND=P18)
+set_property -dict {PACKAGE_PIN M18 IOSTANDARD LVCMOS33} [get_ports {ENC_A[7]}]
+set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ENC_B[7]}]
 
 # --- False paths on async inputs ---
 set_false_path -to [get_ports UART_RXD]
