@@ -13,10 +13,10 @@ Placa **Digilent Nexys A7-100T** (Xilinx Artix-7 XC7A100T-1CSG324).
 
 ## NEORV32 — Procesador RISC-V en Nexys A7
 
-Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.83 ns).
+Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.83 ns base; ⚠️ WNS=-2.82 ns con PID activo — requiere pipeline).
 
 ```bash
-vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream
+vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream (auto-reemplaza CFS template)
 openFPGALoader -b nexys_a7_100 -f neorv32/top.bit --unprotect-flash
 # Power-cycle Nexys → bootloader a 115200 baud en ttyUSB1
 ```
@@ -82,7 +82,23 @@ uint16_t depth = rov_read_depth_cm();   // leer profundidad
 | **2** | `abfb880` | Mixer Matrix 8×6 + IMU Complementary Filter |
 | **3** | `bfe9df6` | PID Controller 6-DOF + Depth Sensor |
 | **fix** | `c5a21d0` | CFS habilitado y cableado, edge-detect, sync, driver |
+| **fix** | `6f8e776` | 5 bugs P0: cfs_out, encoder, heartbeat, presión, calibración |
+| **fix** | `357ae30` | 4 bugs P1: mixer saturation, servo pulse, slew, heartbeat toggle |
+| **fix** | `7be7f07` | P2: constraints, ASYNC_REG, IRQ edge, enc_vel signed, PID→mixer |
+| **4** | `d9ae69e` | JTAG Debug (OCD) habilitado |
+| **fix** | `718d97f` | 0 Critical Warnings (pin V8→T11) |
+| **fix** | `0834dd6` | **CFS real** (8 regs CPU↔ROV) + strobes + arm_timer + servo_pulse |
 | **test** | `e0ddde4` | motor_sweep: barrido PWM 8 canales |
+
+### ⚠️ Estado actual
+
+| Aspecto | Estado |
+|---------|--------|
+| **CFS** | ✅ Funcional — 8 registros mapeados CPU↔ROV |
+| **Build** | ✅ 0 Critical Warnings, 0 Errors |
+| **Timing** | ⚠️ WNS=-2.819ns con PID activo (pipeline pendiente) |
+| **LUTs** | ~5,000 / 63,400 (7.9%) |
+| **DSPs** | ~33 / 240 (13.8%) — validan que el CFS está activo |
 
 ---
 
