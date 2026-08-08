@@ -18,7 +18,7 @@ Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrad
 ```bash
 vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream
 openFPGALoader -b nexys_a7_100 -f neorv32/top.bit --unprotect-flash
-# Power-cycle Nexys → bootloader a 19200 baud en ttyUSB1
+# Power-cycle Nexys → bootloader a 115200 baud en ttyUSB1
 ```
 
 **Bootloader**: comandos `h`(help), `i`(info), `u`(upload), `e`(execute), `s`(flash program).
@@ -136,6 +136,74 @@ Hello, FPGA!                ← eco íntegro
 1. **Timing no cerrado**: la división/módulo combinacional (`freq_cal`, display) viola el período de 10 ns. El bitstream funciona pero los valores de display/UART pueden ser incorrectos en hardware para frecuencias altas. Pendiente: pipeline o conversión secuencial BCD.
 2. **Rango máximo teórico**: ~53 MHz (contador de 27 bits en gate de 1 s). El reporte UART está limitado a 8 dígitos (99.999.999 Hz).
 3. **Sin reset externo**: el diseño depende de la inicialización por configuración FPGA (estándar en Xilinx 7-series, no portable a ASIC).
+
+---
+
+## Capacidad del XC7A100T
+
+La Nexys A7-100T monta un **Xilinx Artix-7 XC7A100T-1CSG324**.
+
+| Recurso | Disponible |
+|---------|-----------|
+| LUTs | **63,400** |
+| Flip-Flops | **126,800** |
+| BRAM | **135 bloques (4860 Kb = ~607 KB)** |
+| DSPs | **240 slices** |
+| I/Os | **210 pines** (PMODs, conectores, etc.) |
+
+### Uso actual de la FPGA
+
+| Diseño | LUTs | % FPGA |
+|--------|------|--------|
+| Frecuencímetro | ~200 | <1% |
+| NEORV32 RV32IMC @ 100 MHz | ~22,000 | 35% |
+| **Total usado** | **~22,200** | **35%** |
+
+→ Quedan libres ~**41,000 LUTs** (**65% del chip**).
+
+### Qué más cabe en el espacio libre
+
+| Proyecto | LUTs estimados | % FPGA |
+|----------|---------------|--------|
+| **Z80A** (T80 core) + UART | ~2,500 | 4% |
+| **6502/6510** | ~1,500 | 2% |
+| **Z80 + 6502** juntos | ~4,600 | 7% |
+| **2do NEORV32** (dual-core RISC-V) | ~22,000 | 35% |
+| **Amiga 500** (68000 + Agnus + Denise + Paula) | ~40,000 | 63% |
+| **NES** (6502 + PPU + APU) | ~12,000 | 19% |
+| **Game Boy** (Z80-like + GPU) | ~8,000 | 13% |
+| **ZX Spectrum** (Z80 + ULA) | ~4,000 | 6% |
+| **8x Z80A** simultáneos | ~18,000 | 28% |
+| **Acelerador IA** (CNN en DSPs) | ~5,000 | 8% |
+| **Analizador lógico** 32 canales @ 200 MHz | ~2,000 | 3% |
+| **SID 6581** (8 voces) | ~600 | 1% |
+| **AY-3-8910** (sonido) | ~1,000 | 2% |
+| **Controlador VGA/HDMI** | ~3,000 | 5% |
+| **MAC Ethernet 10/100** | ~2,000 | 3% |
+
+### Combinaciones posibles (todo simultáneo)
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  XC7A100T — 63,400 LUTs libres                             │
+│                                                            │
+│  ┌──────────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ │
+│  │ NEORV32       │ │ T80 Z80  │ │ 65C02    │ │ VGA out   │ │
+│  │ 22,000 LUTs   │ │ 2,200    │ │ 1,300    │ │ 3,000      │ │
+│  └──────────────┘ └──────────┘ └──────────┘ └───────────┘ │
+│                                                            │
+│  ┌──────────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐ │
+│  │ SID 8580 x8  │ │ YM2149   │ │ UART x4  │ │ BRAM disp │ │
+│  │ 600           │ │ 1,000    │ │ 800      │ │ ~8,000    │ │
+│  └──────────────┘ └──────────┘ └──────────┘ └───────────┘ │
+│                                                            │
+│  Total: ~41,000 LUTs — todavía sobran ~22,000              │
+└────────────────────────────────────────────────────────────┘
+```
+
+En resumen: la Nexys A7-100T es una placa **sobredimensionada** para un solo micro. Se puede usar como laboratorio de **múltiples CPUs antiguas** corriendo en paralelo, o como plataforma de **cómputo heterogéneo** (RISC-V + Z80 + DSPs para IA).
+
+---
 
 ## Licencia
 
