@@ -59,7 +59,6 @@ architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
   constant SERVO_PERIOD : unsigned(15 downto 0) := to_unsigned(20000, 16); -- 20ms in us
   signal servo_tick     : std_ulogic := '0';     -- 1us strobe
   signal servo_us_cnt   : unsigned(15 downto 0) := (others => '0'); -- microsecond counter
-  signal servo_pulse    : unsigned(15 downto 0);  -- computed pulse width
   signal pwm_hw_out     : std_ulogic_vector(7 downto 0);
 
   -- ASYNC_REG attributes for synchronizer chains
@@ -111,6 +110,7 @@ begin
   -- -----------------------------------------------------------------------
   process(CLK100MHZ)
     variable us_div : natural range 0 to 99 := 0; -- 100MHz/100 = 1MHz
+    variable servo_pulse_var : unsigned(15 downto 0); -- per-channel pulse width
   begin
     if rising_edge(CLK100MHZ) then
       if rstn_safe = '0' then
@@ -132,12 +132,12 @@ begin
           else
             servo_us_cnt <= servo_us_cnt + 1;
           end if;
-          -- Generate pulse per channel
+          -- Generate pulse per channel (variable, not signal!)
           for ch in 0 to 7 loop
             -- pulse_us = 1100 + motor_duty * 800 / 65536
-            servo_pulse <= to_unsigned(1100, 16)
+            servo_pulse_var := to_unsigned(1100, 16)
               + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
-            if servo_us_cnt < servo_pulse then
+            if servo_us_cnt < servo_pulse_var then
               pwm_hw_out(ch) <= '1';
             else
               pwm_hw_out(ch) <= '0';

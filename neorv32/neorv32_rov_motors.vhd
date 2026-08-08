@@ -237,8 +237,13 @@ begin
         imu_update <= '0'; depth_update <= '0';
         hb_timer := 0; hb_timeout := 100;
       else
-        -- Heartbeat timer (1ms tick)
+        -- Default strobe resets (single-pulse)
         mixer_trig <= '0';
+        enc_clear  <= '0';
+        imu_update <= '0';
+        depth_update <= '0';
+
+        -- Heartbeat timer (1ms tick)
         if hb_ms_tick = '1' then
           hb_timer := hb_timer + 1;
           if hb_timer >= 999 then hb_timer := 0; end if;
@@ -408,6 +413,7 @@ begin
   -- =====================================================================
   process(clk_i)
     variable arm_timer  : natural range 0 to 2000 := 0;    -- ms counter post-arm
+    variable armed_prev : std_ulogic := '0';               -- edge detect
     variable target     : unsigned(15 downto 0);           -- target from mixer
     variable current    : unsigned(15 downto 0);           -- slewed output
     constant SLEW_STEP  : unsigned(15 downto 0) := to_unsigned(160, 16); -- ~1% per ms
@@ -415,16 +421,17 @@ begin
     if rising_edge(clk_i) then
       if rstn_i = '0' then
         for ch in 0 to 7 loop motor_out_slewed(ch) <= to_unsigned(32768, 16); end loop;
-        arm_timer := 0;
+        arm_timer := 0; armed_prev := '0';
       elsif hb_ms_tick = '1' then
-        -- On arm, start 2s neutral timer
-        if motors_armed = '1' and arm_timer = 0 then
+        -- Arm edge detect: start timer on rising edge of motors_armed
+        if motors_armed = '1' and armed_prev = '0' then
           arm_timer := 2000;
         elsif motors_armed = '0' then
           arm_timer := 0;
         elsif arm_timer > 0 then
           arm_timer := arm_timer - 1;
         end if;
+        armed_prev := motors_armed;
 
         -- Slew each motor channel
         for ch in 0 to 7 loop
