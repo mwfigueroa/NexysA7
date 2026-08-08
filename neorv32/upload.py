@@ -10,7 +10,7 @@ Requires: pyserial (pip install pyserial)
 import serial, time, sys
 
 PORT = "/dev/ttyUSB1"
-BAUD = 19200
+BAUD = 115200
 
 def main():
     exe_path = sys.argv[1] if len(sys.argv) > 1 else None

@@ -1,6 +1,6 @@
 #include <neorv32.h>
 
-#define BAUD 19200
+#define BAUD 115200
 
 int main() {
     neorv32_rte_setup();
