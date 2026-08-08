@@ -1,0 +1,8 @@
+{
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": false,
+  "files.associations": {
+    "*.ld": "linkerscript"
+  },
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/debug/compile_commands.json"
+}

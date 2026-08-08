@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "RV32IMC: instalar toolchain",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/scripts/bootstrap-toolchain.ps1"],
+      "problemMatcher": []
+    },
+    {
+      "label": "RV32IMC: configurar Debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "debug"],
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "RV32IMC: compilar Debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "debug"],
+      "dependsOn": "RV32IMC: configurar Debug",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "RV32IMC: compilar Release",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "release"],
+      "dependsOn": "RV32IMC: configurar Release",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "RV32IMC: configurar Release",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--preset", "release"],
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "RV32IMC: cargar por UART",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "--preset", "debug", "--target", "upload"],
+      "dependsOn": "RV32IMC: compilar Debug",
+      "problemMatcher": []
+    }
+  ]
+}
