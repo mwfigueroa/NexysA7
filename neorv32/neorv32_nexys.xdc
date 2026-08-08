@@ -9,6 +9,10 @@ create_clock -name sys_clk -period 10.0 -waveform {0 5} [get_ports CLK100MHZ]
 # --- Reset: CPU_RESETN (C12, active-low pushbutton) ---
 set_property -dict {PACKAGE_PIN C12 IOSTANDARD LVCMOS33} [get_ports CPU_RESETN]
 
+# --- Safety switches: SW[0]=PWM_ARM (SW3=R15), SW[1]=IRQ (SW12=H6) ---
+set_property -dict {PACKAGE_PIN R15 IOSTANDARD LVCMOS33} [get_ports {SW[0]}]
+set_property -dict {PACKAGE_PIN H6  IOSTANDARD LVCMOS33} [get_ports {SW[1]}]
+
 # --- UART0: FTDI channel B (C4=RXD, D4=TXD) ---
 set_property -dict {PACKAGE_PIN C4 IOSTANDARD LVCMOS33} [get_ports UART_RXD]
 set_property -dict {PACKAGE_PIN D4 IOSTANDARD LVCMOS33} [get_ports UART_TXD]
