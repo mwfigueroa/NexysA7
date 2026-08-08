@@ -35,6 +35,26 @@ set_property -dict {PACKAGE_PIN R17 IOSTANDARD LVCMOS33} [get_ports {LED[0]}]
 set_input_delay -clock [get_clocks sys_clk] -min -add_delay 0.0 [get_ports UART_RXD]
 set_input_delay -clock [get_clocks sys_clk] -max -add_delay 2.0 [get_ports UART_RXD]
 
+# --- PWM[7:0]: PMOD JA (8-channel output) ---
+set_property -dict {PACKAGE_PIN G13 IOSTANDARD LVCMOS33} [get_ports {PWM[0]}]
+set_property -dict {PACKAGE_PIN B11 IOSTANDARD LVCMOS33} [get_ports {PWM[1]}]
+set_property -dict {PACKAGE_PIN A11 IOSTANDARD LVCMOS33} [get_ports {PWM[2]}]
+set_property -dict {PACKAGE_PIN D12 IOSTANDARD LVCMOS33} [get_ports {PWM[3]}]
+set_property -dict {PACKAGE_PIN D13 IOSTANDARD LVCMOS33} [get_ports {PWM[4]}]
+set_property -dict {PACKAGE_PIN B18 IOSTANDARD LVCMOS33} [get_ports {PWM[5]}]
+set_property -dict {PACKAGE_PIN K18 IOSTANDARD LVCMOS33} [get_ports {PWM[6]}]
+set_property -dict {PACKAGE_PIN E15 IOSTANDARD LVCMOS33} [get_ports {PWM[7]}]
+
+# --- SPI host: PMOD JB (SCK=E16, MOSI=F13, MISO=G14, CSN=H13) ---
+set_property -dict {PACKAGE_PIN E16 IOSTANDARD LVCMOS33} [get_ports SPI_SCK]
+set_property -dict {PACKAGE_PIN F13 IOSTANDARD LVCMOS33} [get_ports SPI_MOSI]
+set_property -dict {PACKAGE_PIN G14 IOSTANDARD LVCMOS33} [get_ports SPI_MISO]
+set_property -dict {PACKAGE_PIN H14 IOSTANDARD LVCMOS33} [get_ports SPI_CSN]
+
+# --- TWI / I2C: PMOD JC (SCL=U11, SDA=U12) ---
+set_property -dict {PACKAGE_PIN U11 IOSTANDARD LVCMOS33} [get_ports TWI_SCL]
+set_property -dict {PACKAGE_PIN U12 IOSTANDARD LVCMOS33} [get_ports TWI_SDA]
+
 # --- False paths on async inputs ---
 set_false_path -to [get_ports UART_RXD]
 set_false_path -from [get_ports CPU_RESETN]
