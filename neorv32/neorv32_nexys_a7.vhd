@@ -1,6 +1,6 @@
 -- ================================================================================ --
 -- NEORV32 - Top-Level Wrapper for Digilent Nexys A7-100T (XC7A100T-1CSG324)        --
--- ROV Edition v3 — Etapa 1: Encoders + Safety Manager                              --
+-- ROV Edition v4 — Etapa 2: Mixer Matrix + IMU Fusion                              --
 -- ================================================================================ --
 
 library ieee;
@@ -95,9 +95,10 @@ begin
     rstn_i     => rstn_safe,
     cfs_in_i   => cfs_motors_in,
     cfs_out_o  => cfs_motors_out,
-    enc_a_i    => ENC_A,
-    enc_b_i    => ENC_B,
-    pwm_arm_o  => pwm_arm_cfs
+    enc_a_i     => ENC_A,
+    enc_b_i     => ENC_B,
+    pwm_arm_o   => pwm_arm_cfs,
+    motor_pwm_o => open
   );
 
   -- NEORV32 Processor --------------------------------------------------------------
