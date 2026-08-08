@@ -40,6 +40,7 @@ architecture rtl of neorv32_rov_motors is
   -- Mixer
   type motor_array_t is array (0 to 7) of unsigned(15 downto 0);
   signal motor_out : motor_array_t := (others => to_unsigned(32768, 16));
+  signal motor_out_slewed : motor_array_t := (others => to_unsigned(32768, 16));
   signal mixer_trig : std_ulogic := '0'; -- strobe to run mixer
 
   -- CFS command edge detection
@@ -72,6 +73,7 @@ architecture rtl of neorv32_rov_motors is
   signal pid_tick    : std_ulogic := '0';  -- strobe @ 400 Hz
   signal hb_ms_tick  : std_ulogic := '0';  -- strobe @ 1 kHz
   signal enc_clear   : std_ulogic := '0';  -- strobe to zero encoders
+  signal hb_toggle_last : std_ulogic := '0'; -- toggle bit for heartbeat re-trigger
 
   -- Encoders (with sync chain)
   type enc_array_t is array (0 to 7) of unsigned(31 downto 0);
@@ -240,12 +242,15 @@ begin
           end if;
         end if;
 
-        -- CFS Command processor (edge-triggered)
-        if cmd_strobe = '1' then
+        -- CFS Command processor (edge-triggered for most, toggle for heartbeat)
+        if cmd_strobe = '1' or (cmd = x"1" and cfs_in_i(8) /= hb_toggle_last) then
           case cmd is
-            when x"1" => -- clear heartbeat
-              heartbeat_cnt <= (others => '0');
-              heartbeat_alive <= '1';
+            when x"1" => -- clear heartbeat (toggle bit on cfs_in[8])
+              if cfs_in_i(8) /= hb_toggle_last then
+                heartbeat_cnt <= (others => '0');
+                heartbeat_alive <= '1';
+                hb_toggle_last <= cfs_in_i(8);
+              end if;
 
             when x"2" => -- arm
               if heartbeat_alive = '1' then motors_armed <= '1'; end if;
@@ -367,12 +372,69 @@ begin
               when others => null;
             end case;
           when DONE =>
-            bias := to_unsigned(32768, 16);
-            if acc(15) = '0' then motor_out(m) <= bias + unsigned(acc(15 downto 0));
-            else motor_out(m) <= bias - unsigned((not acc(15 downto 0)) + 1); end if;
+            -- Saturation clamp: prevent wrap-around on overflow
+            if acc > 32767 then acc := to_signed(32767, 32);
+            elsif acc < -32768 then acc := to_signed(-32768, 32); end if;
+            -- Convert to PWM duty: neutral(32768) + saturated_correction
+            motor_out(m) <= resize(unsigned(to_signed(32768, 17) + resize(acc, 17)), 16);
             if m = 7 then fsm := IDLE; else m := m + 1; acc := (others => '0'); fsm := MAC0; end if;
           when others => fsm := IDLE;
         end case;
+      end if;
+    end if;
+  end process;
+
+  -- =====================================================================
+  -- Slew Rate Limiter + Arm Sequence (1ms steps, ±160 counts/ms = ~1%/ms)
+  -- Forces neutral for 2s after arm, then ramps toward target.
+  -- =====================================================================
+  process(clk_i)
+    variable arm_timer  : natural range 0 to 2000 := 0;    -- ms counter post-arm
+    variable target     : unsigned(15 downto 0);           -- target from mixer
+    variable current    : unsigned(15 downto 0);           -- slewed output
+    constant SLEW_STEP  : unsigned(15 downto 0) := to_unsigned(160, 16); -- ~1% per ms
+  begin
+    if rising_edge(clk_i) then
+      if rstn_i = '0' then
+        for ch in 0 to 7 loop motor_out_slewed(ch) <= to_unsigned(32768, 16); end loop;
+        arm_timer := 0;
+      elsif hb_ms_tick = '1' then
+        -- On arm, start 2s neutral timer
+        if motors_armed = '1' and arm_timer = 0 then
+          arm_timer := 2000;
+        elsif motors_armed = '0' then
+          arm_timer := 0;
+        elsif arm_timer > 0 then
+          arm_timer := arm_timer - 1;
+        end if;
+
+        -- Slew each motor channel
+        for ch in 0 to 7 loop
+          if motors_armed = '0' then
+            -- Disarmed: hold neutral
+            motor_out_slewed(ch) <= to_unsigned(32768, 16);
+          elsif arm_timer > 0 then
+            -- 2s post-arm: force neutral
+            motor_out_slewed(ch) <= to_unsigned(32768, 16);
+          else
+            -- Armed + timer expired: ramp toward mixer target
+            target := motor_out(ch);
+            current := motor_out_slewed(ch);
+            if target > current then
+              if target - current > SLEW_STEP then
+                motor_out_slewed(ch) <= current + SLEW_STEP;
+              else
+                motor_out_slewed(ch) <= target;
+              end if;
+            elsif target < current then
+              if current - target > SLEW_STEP then
+                motor_out_slewed(ch) <= current - SLEW_STEP;
+              else
+                motor_out_slewed(ch) <= target;
+              end if;
+            end if;
+          end if;
+        end loop;
       end if;
     end if;
   end process;
@@ -444,7 +506,7 @@ begin
   end process;
 
   motor_map: for ch in 0 to 7 generate
-    motor_pwm_o(ch*16+15 downto ch*16) <= std_ulogic_vector(motor_out(ch));
+    motor_pwm_o(ch*16+15 downto ch*16) <= std_ulogic_vector(motor_out_slewed(ch));
   end generate;
 
 end architecture;

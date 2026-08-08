@@ -48,10 +48,12 @@ architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
   signal pwm_arm_cfs : std_ulogic;
   signal pwm_sw_sync : std_ulogic_vector(1 downto 0) := (others => '0');
 
-  -- Hardware PWM generator from motor_duty (8 channels, 16-bit, ~24 Hz with /64 prescaler)
-  constant PWM_MAX   : unsigned(15 downto 0) := (others => '1');
-  signal pwm_ctr     : unsigned(21 downto 0) := (others => '0'); -- 16-bit counter + 6-bit prescaler
-  signal pwm_hw_out  : std_ulogic_vector(7 downto 0);
+  -- Servo pulse generator: 1us tick, 20ms period, 1100-1900us pulse
+  constant SERVO_PERIOD : unsigned(15 downto 0) := to_unsigned(20000, 16); -- 20ms in us
+  signal servo_tick     : std_ulogic := '0';     -- 1us strobe
+  signal servo_us_cnt   : unsigned(15 downto 0) := (others => '0'); -- microsecond counter
+  signal servo_pulse    : unsigned(15 downto 0);  -- computed pulse width
+  signal pwm_hw_out     : std_ulogic_vector(7 downto 0);
 
 begin
 
@@ -88,24 +90,45 @@ begin
   );
 
   -- -----------------------------------------------------------------------
-  -- Hardware PWM Generator: 8ch from motor_duty, ~24 Hz (100MHz / 64 / 65536)
+  -- Servo Pulse Generator: 1us tick, 20ms period, 1100-1900us pulse
+  -- motor_duty 0-65535 maps to pulse 1100-1900us (neutral=1500us @ 32768)
+  -- Compatible with ESC (T200/Basic ESC et al.) and servo motors.
   -- -----------------------------------------------------------------------
   process(CLK100MHZ)
+    variable us_div : natural range 0 to 99 := 0; -- 100MHz/100 = 1MHz
   begin
     if rising_edge(CLK100MHZ) then
       if rstn_safe = '0' then
-        pwm_ctr <= (others => '0');
+        us_div := 0; servo_tick <= '0';
+        servo_us_cnt <= (others => '0');
         pwm_hw_out <= (others => '0');
       else
-        pwm_ctr <= pwm_ctr + 1;
-        -- Compare each channel (upper 6 bits = prescaler, lower 16 = PWM counter)
-        for ch in 0 to 7 loop
-          if pwm_ctr(15 downto 0) < unsigned(motor_duty(ch*16+15 downto ch*16)) then
-            pwm_hw_out(ch) <= '1';
+        servo_tick <= '0';
+        if us_div = 99 then
+          us_div := 0;
+          servo_tick <= '1';
+        else
+          us_div := us_div + 1;
+        end if;
+
+        if servo_tick = '1' then
+          if servo_us_cnt = SERVO_PERIOD - 1 then
+            servo_us_cnt <= (others => '0');
           else
-            pwm_hw_out(ch) <= '0';
+            servo_us_cnt <= servo_us_cnt + 1;
           end if;
-        end loop;
+          -- Generate pulse per channel
+          for ch in 0 to 7 loop
+            -- pulse_us = 1100 + motor_duty * 800 / 65536
+            servo_pulse <= to_unsigned(1100, 16)
+              + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
+            if servo_us_cnt < servo_pulse then
+              pwm_hw_out(ch) <= '1';
+            else
+              pwm_hw_out(ch) <= '0';
+            end if;
+          end loop;
+        end if;
       end if;
     end if;
   end process;
