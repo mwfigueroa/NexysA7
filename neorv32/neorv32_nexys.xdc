@@ -71,8 +71,8 @@ set_property -dict {PACKAGE_PIN D2  IOSTANDARD LVCMOS33} [get_ports {ENC_B[3]}]
 # ENC4: PMOD JC[2:3] = V10,V9
 set_property -dict {PACKAGE_PIN V10 IOSTANDARD LVCMOS33} [get_ports {ENC_A[4]}]
 set_property -dict {PACKAGE_PIN V9  IOSTANDARD LVCMOS33} [get_ports {ENC_B[4]}]
-# ENC5: PMOD JC[4:5] = V8,U9
-set_property -dict {PACKAGE_PIN V8  IOSTANDARD LVCMOS33} [get_ports {ENC_A[5]}]
+# ENC5: PMOD JC[7]=U9 + free 7-seg cathode T11
+set_property -dict {PACKAGE_PIN T11 IOSTANDARD LVCMOS33} [get_ports {ENC_A[5]}]
 set_property -dict {PACKAGE_PIN U9  IOSTANDARD LVCMOS33} [get_ports {ENC_B[5]}]
 # ENC6: PMOD JC[6:7] = T9,T10
 set_property -dict {PACKAGE_PIN T9  IOSTANDARD LVCMOS33} [get_ports {ENC_A[6]}]
