@@ -14,6 +14,9 @@ puts "=============================================="
 # Create project
 create_project -force $project_name "$project_dir/build" -part xc7a100tcsg324-1
 
+# Replace NEORV32 CFS template with our custom implementation
+file copy -force "$project_dir/neorv32_cfs_custom.vhd" "$neorv32_home/rtl/core/neorv32_cfs.vhd"
+
 # Read NEORV32 file list and add VHDL sources
 set file_list_raw [read [open "$neorv32_home/rtl/file_list_core.f" r]]
 set file_list [string map [list {$NEORV32_HOME} $neorv32_home] $file_list_raw]
