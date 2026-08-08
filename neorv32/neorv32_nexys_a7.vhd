@@ -1,37 +1,30 @@
 -- ================================================================================ --
 -- NEORV32 - Top-Level Wrapper for Digilent Nexys A7-100T (XC7A100T-1CSG324)        --
--- ROV Edition v4 — Etapa 2: Mixer Matrix + IMU Fusion                              --
+-- ROV Edition v5 — CFS-enabled, hardware PWM from mixer/PID                         --
 -- ================================================================================ --
 
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 library neorv32;
 use neorv32.neorv32_package.all;
 
 entity neorv32_nexys_a7 is
   port (
-    -- Global control --
     CLK100MHZ  : in  std_ulogic;
     CPU_RESETN : in  std_ulogic;
-    -- Safety switches --
     SW         : in  std_ulogic_vector(1 downto 0);
-    -- UART0 --
     UART_RXD   : in  std_ulogic;
     UART_TXD   : out std_ulogic;
-    -- GPIO / LEDs --
     LED        : out std_ulogic_vector(15 downto 0);
-    -- PWM (PMOD JA) --
     PWM        : out std_ulogic_vector(7 downto 0);
-    -- SPI host (PMOD JB) --
     SPI_SCK    : out std_ulogic;
     SPI_MOSI   : out std_ulogic;
     SPI_MISO   : in  std_ulogic;
     SPI_CSN    : out std_ulogic;
-    -- TWI / I2C (PMOD JC top 2) --
     TWI_SCL    : inout std_logic;
     TWI_SDA    : inout std_logic;
-    -- Quadrature Encoders (PMOD JD + JC + buttons) --
     ENC_A      : in  std_ulogic_vector(7 downto 0);
     ENC_B      : in  std_ulogic_vector(7 downto 0)
   );
@@ -40,68 +33,89 @@ end entity;
 architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
 
   signal gpio_o     : std_ulogic_vector(31 downto 0);
-  signal pwm_all    : std_ulogic_vector(31 downto 0);
-  signal pwm_raw    : std_ulogic_vector(7 downto 0);
-
-  -- TWI / I2C --
   signal twi_sda_i, twi_sda_o, twi_scl_i, twi_scl_o : std_ulogic;
-
-  -- SPI --
   signal spi_csn_vec : std_ulogic_vector(7 downto 0);
-
-  -- Reset synchronizer --
   signal rstn_sync   : std_ulogic_vector(3 downto 0) := (others => '0');
   signal rstn_safe   : std_ulogic;
   signal irq_sync    : std_ulogic_vector(1 downto 0) := (others => '0');
 
-  -- ROV Motor Subsystem signals --
-  signal cfs_motors_in  : std_ulogic_vector(255 downto 0);
-  signal cfs_motors_out : std_ulogic_vector(255 downto 0);
-  signal pwm_arm_cfs    : std_ulogic;  -- CFS heartbeat-based arm
-  signal pwm_sw_arm     : std_ulogic;  -- SW[0] manual safety
+  -- CFS bus (256-bit memory-mapped register interface)
+  signal cfs_in      : std_ulogic_vector(255 downto 0);
+  signal cfs_out     : std_ulogic_vector(255 downto 0);
+
+  -- ROV Motor Subsystem
+  signal motor_duty  : std_ulogic_vector(127 downto 0); -- 8 x 16-bit from mixer/PID
+  signal pwm_arm_cfs : std_ulogic;
+  signal pwm_sw_sync : std_ulogic_vector(1 downto 0) := (others => '0');
+
+  -- Hardware PWM generator from motor_duty (8 channels, 16-bit, ~24 Hz with /64 prescaler)
+  constant PWM_MAX   : unsigned(15 downto 0) := (others => '1');
+  signal pwm_ctr     : unsigned(21 downto 0) := (others => '0'); -- 16-bit counter + 6-bit prescaler
+  signal pwm_hw_out  : std_ulogic_vector(7 downto 0);
 
 begin
 
   -- Reset Synchronizer --
-  reset_sync: process(CLK100MHZ, CPU_RESETN)
+  process(CLK100MHZ, CPU_RESETN)
   begin
-    if CPU_RESETN = '0' then
-      rstn_sync <= (others => '0');
-    elsif rising_edge(CLK100MHZ) then
-      rstn_sync <= rstn_sync(2 downto 0) & '1';
-    end if;
+    if CPU_RESETN = '0' then rstn_sync <= (others => '0');
+    elsif rising_edge(CLK100MHZ) then rstn_sync <= rstn_sync(2 downto 0) & '1'; end if;
   end process;
   rstn_safe <= rstn_sync(3);
 
-  -- IRQ Synchronizer --
-  irq_proc: process(CLK100MHZ)
+  -- IRQ + SW synchronizer --
+  process(CLK100MHZ)
   begin
     if rising_edge(CLK100MHZ) then
       irq_sync <= irq_sync(0) & SW(1);
+      pwm_sw_sync <= pwm_sw_sync(0) & SW(0);
     end if;
   end process;
 
-  -- PWM Safety Gate: both CFS heartbeat AND SW[0] must be high --
-  pwm_sw_arm <= SW(0);
-  pwm_raw <= std_ulogic_vector(pwm_all(7 downto 0));
-  PWM <= pwm_raw when (pwm_arm_cfs = '1' and pwm_sw_arm = '1') else (others => '0');
-
   -- -----------------------------------------------------------------------
-  -- ROV Motor Subsystem: PWM Safety Manager + Quadrature Encoders
+  -- ROV Motor Subsystem (Safety + Encoders + Mixer + PID + Depth)
   -- -----------------------------------------------------------------------
   rov_motors_inst: entity work.neorv32_rov_motors
   port map (
     clk_i      => CLK100MHZ,
     rstn_i     => rstn_safe,
-    cfs_in_i   => cfs_motors_in,
-    cfs_out_o  => cfs_motors_out,
-    enc_a_i     => ENC_A,
-    enc_b_i     => ENC_B,
-    pwm_arm_o   => pwm_arm_cfs,
-    motor_pwm_o => open
+    cfs_in_i   => cfs_in,
+    cfs_out_o  => cfs_out,
+    enc_a_i    => ENC_A,
+    enc_b_i    => ENC_B,
+    motor_pwm_o => motor_duty,
+    pwm_arm_o  => pwm_arm_cfs
   );
 
-  -- NEORV32 Processor --------------------------------------------------------------
+  -- -----------------------------------------------------------------------
+  -- Hardware PWM Generator: 8ch from motor_duty, ~24 Hz (100MHz / 64 / 65536)
+  -- -----------------------------------------------------------------------
+  process(CLK100MHZ)
+  begin
+    if rising_edge(CLK100MHZ) then
+      if rstn_safe = '0' then
+        pwm_ctr <= (others => '0');
+        pwm_hw_out <= (others => '0');
+      else
+        pwm_ctr <= pwm_ctr + 1;
+        -- Compare each channel (upper 6 bits = prescaler, lower 16 = PWM counter)
+        for ch in 0 to 7 loop
+          if pwm_ctr(15 downto 0) < unsigned(motor_duty(ch*16+15 downto ch*16)) then
+            pwm_hw_out(ch) <= '1';
+          else
+            pwm_hw_out(ch) <= '0';
+          end if;
+        end loop;
+      end if;
+    end if;
+  end process;
+
+  -- PWM outputs: gated by CFS heartbeat AND SW[0] (both synchronized)
+  PWM <= pwm_hw_out when (pwm_arm_cfs = '1' and pwm_sw_sync(1) = '1') else (others => '0');
+
+  -- -----------------------------------------------------------------------
+  -- NEORV32 Processor — CFS ENABLED
+  -- -----------------------------------------------------------------------
   neorv32_top_inst: neorv32_top
   generic map (
     CLOCK_FREQUENCY     => 100_000_000,
@@ -121,12 +135,15 @@ begin
     ICACHE_EN           => false,
     DCACHE_EN           => false,
     XBUS_EN             => false,
+    -- CFS: ENABLED --
+    IO_CFS_EN           => true,
+    -- Peripherals --
     IO_GPIO_NUM         => 16,
     IO_CLINT_EN         => true,
     IO_UART0_EN         => true,
     IO_UART0_RX_FIFO    => 64,
     IO_UART0_TX_FIFO    => 64,
-    IO_PWM_NUM          => 8,
+    IO_PWM_NUM          => 0,     -- PWM native disabled, usamos hardware PWM
     IO_SPI_EN           => true,
     IO_TWI_EN           => true,
     IO_GPTMR_NUM        => 4,
@@ -145,15 +162,22 @@ begin
     uart0_rxd_i => UART_RXD,
     uart0_rtsn_o => open,
     uart0_ctsn_i => '0',
-    pwm_o       => pwm_all,
+    -- CFS: CONNECTED --
+    cfs_in_i    => cfs_out,    -- ROV cfs_out → CPU cfs_in (CPU reads ROV data)
+    cfs_out_o   => cfs_in,     -- CPU cfs_out → ROV cfs_in (CPU writes ROV commands)
+    -- PWM native: disconnected --
+    pwm_o       => open,
+    -- SPI --
     spi_clk_o   => SPI_SCK,
     spi_dat_o   => SPI_MOSI,
     spi_dat_i   => SPI_MISO,
     spi_csn_o   => spi_csn_vec,
+    -- TWI --
     twi_sda_i   => twi_sda_i,
     twi_sda_o   => twi_sda_o,
     twi_scl_i   => twi_scl_i,
     twi_scl_o   => twi_scl_o,
+    -- JTAG --
     jtag_tck_i  => '0',
     jtag_tdi_i  => '0',
     jtag_tdo_o  => open,
@@ -164,11 +188,9 @@ begin
     irq_mei_i   => irq_sync(1)
   );
 
-  -- Map GPIO to LEDs --
   LED <= std_ulogic_vector(gpio_o(15 downto 0));
   SPI_CSN <= spi_csn_vec(0);
 
-  -- TWI / I2C bidirectional buffering --
   TWI_SDA <= '0' when twi_sda_o = '0' else 'Z';
   twi_sda_i <= std_ulogic(TWI_SDA);
   TWI_SCL <= '0' when twi_scl_o = '0' else 'Z';

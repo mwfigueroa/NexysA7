@@ -84,3 +84,5 @@ set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ENC_B[7]}]
 # --- False paths on async inputs ---
 set_false_path -to [get_ports UART_RXD]
 set_false_path -from [get_ports CPU_RESETN]
+set_false_path -to [get_ports {ENC_A[*]}]
+set_false_path -to [get_ports {ENC_B[*]}]
