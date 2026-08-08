@@ -13,7 +13,7 @@ Placa **Digilent Nexys A7-100T** (Xilinx Artix-7 XC7A100T-1CSG324).
 
 ## NEORV32 — Procesador RISC-V en Nexys A7
 
-Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.88 ns).
+Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.83 ns).
 
 ```bash
 vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream
@@ -23,7 +23,66 @@ openFPGALoader -b nexys_a7_100 -f neorv32/top.bit --unprotect-flash
 
 **Bootloader**: comandos `h`(help), `i`(info), `u`(upload), `e`(execute), `s`(flash program).
 
-**Periféricos**: UART0, GPIO (16 LEDs), CLINT.
+**Periféricos**: UART0, SPI, TWI/I2C, GPIO (16 LEDs), PWM 8ch hardware, GPTMR, WDT, TRNG, **CFS para control ROV**.
+
+### CFS — Custom Functions Subsystem (Control ROV)
+
+El **CFS** es un bloque interno del NEORV32 que conecta hardware custom directamente al bus del CPU sin modificar el core. Nuestro módulo `neorv32_rov_motors.vhd` implementa:
+
+```
+                    ┌──────────────────────────┐
+  CPU RV32IMC       │  CFS (256-bit bus)        │
+  ┌────────┐        │  ┌────────────────────┐   │
+  │ store  │──cfs──►│  │ cmd edge-detect    │   │
+  │ CFS_R0 │        │  │                    │   │
+  └────────┘        │  │ 0x1: heartbeat     │   │    ┌──────────────┐
+                    │  │ 0x2: arm motors    │   │    │ PWM hardware │
+  ┌────────┐        │  │ 0x4: calibrar enc  │   │    │ 8ch @ 24Hz   │──► PMOD JA
+  │ load   │◄──cfs──│  │ 0x6: setpoint      │──►──┤    │ safety gate  │
+  │ CFS_R1 │        │  │ 0x8: PID gains     │   │    └──────────────┘
+  └────────┘        │  │ 0xB: PID enable    │   │
+                    │  └────────────────────┘   │
+  14 instrucciones  │                           │
+  cada 2.5ms =      │  ┌────────────────────┐   │    ┌──────────────┐
+  0.005% CPU ──────►│  │ Mixer 8×6 Matrix   │   │    │ Encoders 8ch │
+                    │  │ 48 coeficientes    │   │    │ 32-bit pos   │◄── PMOD JD+JC
+                    │  └────────────────────┘   │    │ 4x decode    │
+                    │  ┌────────────────────┐   │    └──────────────┘
+                    │  │ PID 6-DOF @ 400Hz  │   │
+                    │  │ Kp/Ki/Kd por eje  │   │    ┌──────────────┐
+                    │  │ anti-windup clamp  │   │    │ IMU Fusion   │
+                    │  └────────────────────┘   │    │ α=0.98 gyro  │
+                    │  ┌────────────────────┐   │    │ β=0.02 accel │
+                    │  │ Safety Heartbeat   │   │    └──────────────┘
+                    │  │ timeout 200ms      │   │
+                    │  │ fail-safe auto-off │   │    ┌──────────────┐
+                    │  └────────────────────┘   │    │ Depth Sensor │
+                    └──────────────────────────┘    │ P→cm + temp  │
+                                                    └──────────────┘
+```
+
+**El CPU no gasta ciclos en control**: escribe setpoints (6 stores) y lee telemetría (8 loads). Todo el cálculo pesado — mezcla 8×6, 6 PID, filtro IMU, lectura de encoders — ocurre en hardware a 100 MHz.
+
+**Driver en firmware**: [`neorv32/sw/rov_driver/rov_cfs.h`](neorv32/sw/rov_driver/rov_cfs.h)
+
+```c
+#include "rov_cfs.h"
+rov_init();                              // heartbeat + arm
+rov_set_setpoint(AXIS_HEAVE, 0);        // control profundidad
+rov_set_pid_gain(AXIS_HEAVE, kp,ki,kd); // sintonizar PID
+uint16_t depth = rov_read_depth_cm();   // leer profundidad
+```
+
+### Etapas implementadas
+
+| Etapa | Commit | Hardware |
+|-------|--------|----------|
+| **0** | `be1364b` | CPU base + UART + SPI + I2C + GPIO LEDs |
+| **1** | `79332e4` | PWM Safety Manager + Quadrature Encoder 8ch |
+| **2** | `abfb880` | Mixer Matrix 8×6 + IMU Complementary Filter |
+| **3** | `bfe9df6` | PID Controller 6-DOF + Depth Sensor |
+| **fix** | `c5a21d0` | CFS habilitado y cableado, edge-detect, sync, driver |
+| **test** | `e0ddde4` | motor_sweep: barrido PWM 8 canales |
 
 ---
 
