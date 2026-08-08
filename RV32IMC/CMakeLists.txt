@@ -15,8 +15,8 @@ set(NEORV32_HOME "${CMAKE_CURRENT_SOURCE_DIR}/.toolchains/neorv32" CACHE PATH "�
 set(NEORV32_VERSION "v1.13.3" CACHE STRING "Etiqueta de NEORV32 que debe coincidir con el RTL sintetizado")
 set(NEORV32_RTL_HOME "" CACHE PATH "Árbol RTL usado para el bitstream (opcional, para verificar la versión)")
 set(RV32IMC_CPU_HZ "100000000" CACHE STRING "Frecuencia del reloj del procesador (Hz)")
-set(NEORV32_IMEM_SIZE "32k" CACHE STRING "IMEM configurada en el bitstream")
-set(NEORV32_DMEM_SIZE "8k" CACHE STRING "DMEM configurada en el bitstream")
+set(NEORV32_IMEM_SIZE "64k" CACHE STRING "IMEM configurada en el bitstream")
+set(NEORV32_DMEM_SIZE "32k" CACHE STRING "DMEM configurada en el bitstream")
 set(NEORV32_DMEM_BASE "0x80000000" CACHE STRING "Base de DMEM configurada en el SoC")
 set(NEORV32_HEAP_SIZE "1k" CACHE STRING "Heap reservado en DMEM (0 = sin malloc/new)")
 

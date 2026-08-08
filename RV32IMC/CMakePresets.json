@@ -10,7 +10,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.toolchains/ninja/ninja.exe"
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.toolchains/ninja/ninja.exe",
+        "NEORV32_IMEM_SIZE": "64k",
+        "NEORV32_DMEM_SIZE": "32k",
+        "NEORV32_DMEM_BASE": "0x80000000"
       }
     },
     {
@@ -22,7 +25,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.toolchains/ninja/ninja.exe"
+        "CMAKE_MAKE_PROGRAM": "${sourceDir}/.toolchains/ninja/ninja.exe",
+        "NEORV32_IMEM_SIZE": "64k",
+        "NEORV32_DMEM_SIZE": "32k",
+        "NEORV32_DMEM_BASE": "0x80000000"
       }
     }
   ],

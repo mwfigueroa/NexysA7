@@ -1,6 +1,6 @@
 # Entorno NEORV32 para Nexys A7
 
-Proyecto C/C++ para el **NEORV32 RV32IMC** (`-march=rv32imc_zicsr_zifencei`, `-mabi=ilp32`) de la rama [`aplicacion`](https://github.com/mwfigueroa/NexysA7/tree/aplicacion): 100 MHz, IMEM 32 KiB, DMEM 8 KiB en `0x80000000`, bootloader UART y UART0 a 115200 baudios. El WNS es una propiedad de la implementación FPGA, no del firmware.
+Proyecto C/C++ para el **NEORV32 RV32IMC** (`-march=rv32imc_zicsr_zifencei`, `-mabi=ilp32`) de la rama [`aplicacion`](https://github.com/mwfigueroa/NexysA7/tree/aplicacion): 100 MHz, IMEM 64 KiB, DMEM 32 KiB en `0x80000000`, bootloader UART y UART0 a 115200 baudios. El WNS es una propiedad de la implementación FPGA, no del firmware.
 
 ## Inicio rápido (Windows / PowerShell)
 
@@ -26,8 +26,8 @@ Coloque su programa en `app/`. Se compilan automáticamente los archivos `.c` y 
 | Parámetro | Valor inicial | Uso |
 | --- | ---: | --- |
 | `NEORV32_VERSION` | `v1.13.3` | Versión de NEORV32 para crt0, linker script y drivers |
-| `NEORV32_IMEM_SIZE` | `32k` | Memoria de instrucciones configurada |
-| `NEORV32_DMEM_SIZE` | `8k` | Datos, heap y pila |
+| `NEORV32_IMEM_SIZE` | `64k` | Memoria de instrucciones configurada |
+| `NEORV32_DMEM_SIZE` | `32k` | Datos, heap y pila |
 | `NEORV32_DMEM_BASE` | `0x80000000` | Base de la RAM del SoC |
 | `NEORV32_HEAP_SIZE` | `1k` | Heap para `malloc`/`new` (`0` los deshabilita) |
 | `RV32IMC_CPU_HZ` | `100000000` | Valor esperado del reloj; el firmware lo contrasta con SYSINFO al arrancar |
@@ -59,7 +59,7 @@ El SoC se sintetiza con `OCD_EN => false`, así que no hay depurador JTAG: `debu
 
 ## Soporte C++
 
-Se compila sin excepciones, RTTI ni `libstdc++`. Los constructores globales funcionan y `new`/`delete` están disponibles siempre que `NEORV32_HEAP_SIZE` sea distinto de cero — con el valor por defecto el heap ocupa 1 KiB de los 8 KiB de DMEM y la pila baja desde `0x80002000`. Los operadores de `src/cxxabi.cpp` son `noexcept` y devuelven `nullptr` si el heap se agota; compruebe el resultado.
+Se compila sin excepciones, RTTI ni `libstdc++`. Los constructores globales funcionan y `new`/`delete` están disponibles siempre que `NEORV32_HEAP_SIZE` sea distinto de cero — con el valor por defecto el heap ocupa 1 KiB de los 32 KiB de DMEM y la pila baja desde `0x80008000`. Los operadores de `src/cxxabi.cpp` son `noexcept` y devuelven `nullptr` si el heap se agota; compruebe el resultado.
 
 ## Cargar en FPGA
 
