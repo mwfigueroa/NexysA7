@@ -1,6 +1,6 @@
--- ==============================================================================
--- NEORV32 Nexys A7-100T — Constraints (v3: ROV motors)
--- ==============================================================================
+# ==============================================================================
+# NEORV32 Nexys A7-100T — Constraints (v3: ROV motors)
+# ==============================================================================
 
 # --- Clock: 100 MHz oscillator (E3) ---
 set_property -dict {PACKAGE_PIN E3 IOSTANDARD LVCMOS33} [get_ports CLK100MHZ]
@@ -82,7 +82,7 @@ set_property -dict {PACKAGE_PIN M18 IOSTANDARD LVCMOS33} [get_ports {ENC_A[7]}]
 set_property -dict {PACKAGE_PIN P18 IOSTANDARD LVCMOS33} [get_ports {ENC_B[7]}]
 
 # --- False paths on async inputs ---
-set_false_path -to [get_ports UART_RXD]
+set_false_path -from [get_ports UART_RXD]
 set_false_path -from [get_ports CPU_RESETN]
-set_false_path -to [get_ports {ENC_A[*]}]
-set_false_path -to [get_ports {ENC_B[*]}]
+set_false_path -from [get_ports {ENC_A[*]}]
+set_false_path -from [get_ports {ENC_B[*]}]

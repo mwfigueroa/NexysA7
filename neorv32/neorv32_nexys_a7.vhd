@@ -37,7 +37,9 @@ architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
   signal spi_csn_vec : std_ulogic_vector(7 downto 0);
   signal rstn_sync   : std_ulogic_vector(3 downto 0) := (others => '0');
   signal rstn_safe   : std_ulogic;
-  signal irq_sync    : std_ulogic_vector(1 downto 0) := (others => '0');
+  -- IRQ + SW synchronizer (edge-detect on SW[1])
+  signal irq_edge   : std_ulogic; -- rising edge pulse
+  signal irq_sync_v : std_ulogic_vector(1 downto 0) := (others => '0');
 
   -- CFS bus (256-bit memory-mapped register interface)
   signal cfs_in      : std_ulogic_vector(255 downto 0);
@@ -55,6 +57,12 @@ architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
   signal servo_pulse    : unsigned(15 downto 0);  -- computed pulse width
   signal pwm_hw_out     : std_ulogic_vector(7 downto 0);
 
+  -- ASYNC_REG attributes for synchronizer chains
+  attribute ASYNC_REG : string;
+  attribute ASYNC_REG of rstn_sync   : signal is "TRUE";
+  attribute ASYNC_REG of irq_sync_v  : signal is "TRUE";
+  attribute ASYNC_REG of pwm_sw_sync : signal is "TRUE";
+
 begin
 
   -- Reset Synchronizer --
@@ -65,14 +73,16 @@ begin
   end process;
   rstn_safe <= rstn_sync(3);
 
-  -- IRQ + SW synchronizer --
+  -- IRQ + SW synchronizer (edge-detect on SW[1])
   process(CLK100MHZ)
   begin
     if rising_edge(CLK100MHZ) then
-      irq_sync <= irq_sync(0) & SW(1);
+      irq_sync_v <= irq_sync_v(0) & SW(1);
       pwm_sw_sync <= pwm_sw_sync(0) & SW(0);
     end if;
   end process;
+  -- Rising edge pulse: irq_sync_v[1]=1 and irq_sync_v[0]=0 means new edge
+  irq_edge <= '1' when irq_sync_v(1) = '1' and irq_sync_v(0) = '0' else '0';
 
   -- -----------------------------------------------------------------------
   -- ROV Motor Subsystem (Safety + Encoders + Mixer + PID + Depth)
@@ -208,7 +218,7 @@ begin
     mtime_time_o => open,
     irq_msi_i   => '0',
     irq_mti_i   => '0',
-    irq_mei_i   => irq_sync(1)
+    irq_mei_i   => irq_edge
   );
 
   LED <= std_ulogic_vector(gpio_o(15 downto 0));

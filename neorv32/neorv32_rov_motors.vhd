@@ -77,9 +77,16 @@ architecture rtl of neorv32_rov_motors is
 
   -- Encoders (with sync chain)
   type enc_array_t is array (0 to 7) of unsigned(31 downto 0);
-  signal enc_pos, enc_vel, enc_prev : enc_array_t := (others => (others => '0'));
+  type enc_vel_array_t is array (0 to 7) of signed(31 downto 0);
+  signal enc_pos, enc_prev : enc_array_t := (others => (others => '0'));
+  signal enc_vel : enc_vel_array_t := (others => (others => '0'));
   signal enc_sync1, enc_sync2 : std_ulogic_vector(15 downto 0) := (others => '0');
   signal enc_last : std_ulogic_vector(15 downto 0) := (others => '0');
+
+  -- ASYNC_REG attributes for encoder sync chains
+  attribute ASYNC_REG : string;
+  attribute ASYNC_REG of enc_sync1 : signal is "TRUE";
+  attribute ASYNC_REG of enc_sync2 : signal is "TRUE";
 
   -- IMU
   type imu_raw_t is array (0 to 5) of sfix_t;
@@ -190,7 +197,7 @@ begin
       if cnt = 3199999 then cnt := 0;
         for ch in 0 to 7 loop
           delta := signed(enc_pos(ch)) - signed(enc_prev(ch));
-          enc_vel(ch) <= unsigned(delta); enc_prev(ch) <= enc_pos(ch);
+          enc_vel(ch) <= delta; enc_prev(ch) <= enc_pos(ch);
         end loop;
       else cnt := cnt + 1; end if;
     end if;
@@ -304,6 +311,11 @@ begin
           end case;
         end if;
 
+        -- Auto-trigger mixer when PID is running (hardware control loop)
+        if pid_tick = '1' and pid_enable /= "000000" then
+          mixer_trig <= '1';
+        end if;
+
       end if;
     end if;
   end process;
@@ -353,6 +365,12 @@ begin
     variable acc : signed(31 downto 0) := (others => '0');
     variable prod : signed(31 downto 0);
     variable bias : unsigned(15 downto 0);
+    -- Mixer input: use PID output when enabled, else manual setpoint
+    impure function mix_val(ax : integer) return sfix_t is
+    begin
+      if pid_enable(ax) = '1' then return pid_output(ax);
+      else return control_sp(ax); end if;
+    end function;
   begin
     if rising_edge(clk_i) then
       if rstn_i = '0' then
@@ -363,12 +381,12 @@ begin
             if mixer_trig = '1' then fsm := MAC0; m := 0; acc := (others => '0'); end if;
           when MAC0 | MAC1 | MAC2 | MAC3 | MAC4 | MAC5 =>
             case fsm is
-              when MAC0 => prod := resize(mixer_coeff(m*6+0) * control_sp(0), 32); acc := resize(prod(29 downto 14), 32); fsm := MAC1;
-              when MAC1 => prod := resize(mixer_coeff(m*6+1) * control_sp(1), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC2;
-              when MAC2 => prod := resize(mixer_coeff(m*6+2) * control_sp(2), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC3;
-              when MAC3 => prod := resize(mixer_coeff(m*6+3) * control_sp(3), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC4;
-              when MAC4 => prod := resize(mixer_coeff(m*6+4) * control_sp(4), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC5;
-              when MAC5 => prod := resize(mixer_coeff(m*6+5) * control_sp(5), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := DONE;
+              when MAC0 => prod := resize(mixer_coeff(m*6+0) * mix_val(0), 32); acc := resize(prod(29 downto 14), 32); fsm := MAC1;
+              when MAC1 => prod := resize(mixer_coeff(m*6+1) * mix_val(1), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC2;
+              when MAC2 => prod := resize(mixer_coeff(m*6+2) * mix_val(2), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC3;
+              when MAC3 => prod := resize(mixer_coeff(m*6+3) * mix_val(3), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC4;
+              when MAC4 => prod := resize(mixer_coeff(m*6+4) * mix_val(4), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC5;
+              when MAC5 => prod := resize(mixer_coeff(m*6+5) * mix_val(5), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := DONE;
               when others => null;
             end case;
           when DONE =>
@@ -469,7 +487,8 @@ begin
       if rstn_i = '0' then depth_cm <= (others => '0');
       elsif depth_update = '1' then
         diff := signed(depth_raw_pressure) - to_signed(101300, 32);
-        tmp  := resize(diff * 102 / 10000, 32);
+        -- cm = diff * 0.0102 ≈ (diff * 10695) >> 20
+        tmp  := resize(shift_right(diff * to_signed(10695, 32), 20), 32);
         if tmp < 0 then depth_cm <= (others => '0');
         else depth_cm <= unsigned(tmp(15 downto 0)); end if;
       end if;
