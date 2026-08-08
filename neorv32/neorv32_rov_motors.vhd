@@ -71,6 +71,7 @@ architecture rtl of neorv32_rov_motors is
   -- Timers
   signal pid_tick    : std_ulogic := '0';  -- strobe @ 400 Hz
   signal hb_ms_tick  : std_ulogic := '0';  -- strobe @ 1 kHz
+  signal enc_clear   : std_ulogic := '0';  -- strobe to zero encoders
 
   -- Encoders (with sync chain)
   type enc_array_t is array (0 to 7) of unsigned(31 downto 0);
@@ -149,16 +150,32 @@ begin
       enc_sync1 <= enc_a_i & enc_b_i;
       enc_sync2 <= enc_sync1;
       enc_last  <= enc_sync2;
-      -- 4x quadrature decode
+      -- 4x quadrature decode (A[ch]=enc_last(8+ch), B[ch]=enc_last(ch))
       for ch in 0 to 7 loop
-        case enc_last(ch*2+1 downto ch*2) & enc_sync2(ch*2+1 downto ch*2) is
-          when "00" & "01" | "01" & "11" | "11" & "10" | "10" & "00" =>
-            enc_pos(ch) <= enc_pos(ch) + 1;
-          when "00" & "10" | "10" & "11" | "11" & "01" | "01" & "00" =>
-            enc_pos(ch) <= enc_pos(ch) - 1;
-          when others => null;
-        end case;
+        if    enc_sync2(8+ch) = '1' and enc_sync2(ch) = '1' and enc_last(8+ch) = '0' and enc_last(ch) = '1' then
+          enc_pos(ch) <= enc_pos(ch) + 1;
+        elsif enc_sync2(8+ch) = '0' and enc_sync2(ch) = '1' and enc_last(8+ch) = '0' and enc_last(ch) = '0' then
+          enc_pos(ch) <= enc_pos(ch) + 1;
+        elsif enc_sync2(8+ch) = '0' and enc_sync2(ch) = '0' and enc_last(8+ch) = '1' and enc_last(ch) = '0' then
+          enc_pos(ch) <= enc_pos(ch) + 1;
+        elsif enc_sync2(8+ch) = '1' and enc_sync2(ch) = '0' and enc_last(8+ch) = '1' and enc_last(ch) = '1' then
+          enc_pos(ch) <= enc_pos(ch) + 1;
+        elsif enc_sync2(8+ch) = '0' and enc_sync2(ch) = '0' and enc_last(8+ch) = '0' and enc_last(ch) = '1' then
+          enc_pos(ch) <= enc_pos(ch) - 1;
+        elsif enc_sync2(8+ch) = '1' and enc_sync2(ch) = '0' and enc_last(8+ch) = '0' and enc_last(ch) = '0' then
+          enc_pos(ch) <= enc_pos(ch) - 1;
+        elsif enc_sync2(8+ch) = '1' and enc_sync2(ch) = '1' and enc_last(8+ch) = '1' and enc_last(ch) = '0' then
+          enc_pos(ch) <= enc_pos(ch) - 1;
+        elsif enc_sync2(8+ch) = '0' and enc_sync2(ch) = '1' and enc_last(8+ch) = '1' and enc_last(ch) = '1' then
+          enc_pos(ch) <= enc_pos(ch) - 1;
+        end if;
       end loop;
+      -- Calibration: zero all encoders on strobe
+      if enc_clear = '1' then
+        for ch in 0 to 7 loop
+          enc_pos(ch) <= (others => '0');
+        end loop;
+      end if;
     end if;
   end process;
 
@@ -236,8 +253,8 @@ begin
             when x"3" => -- disarm
               motors_armed <= '0';
 
-            when x"4" => -- calibrate encoders
-              for ch in 0 to 7 loop enc_pos(ch) <= (others => '0'); end loop;
+            when x"4" => -- calibrate encoders (strobe, cleared in encoder process)
+              enc_clear <= '1';
 
             when x"5" => -- write mixer coefficient
               coeff_addr := to_integer(coeff_idx);
@@ -266,21 +283,22 @@ begin
               i := to_integer(axis_sel);
               if i < 6 then pid_current(i) <= s16_val; end if;
 
-            when x"A" => -- write depth raw data
-              if cfs_in_i(10) = '0' then depth_raw_pressure <= resize(unsigned(cfs_in_i(31 downto 0)), 32);
-              else depth_raw_temp <= signed(cfs_in_i(31 downto 16)); end if;
+            when x"A" => -- write depth raw data (pressure in 63:32, temp in 79:64)
+              if cfs_in_i(10) = '0' then depth_raw_pressure <= unsigned(cfs_in_i(63 downto 32));
+              else depth_raw_temp <= signed(cfs_in_i(79 downto 64)); end if;
               depth_update <= '1';
 
             when x"B" => -- PID enable mask
               pid_enable <= cfs_in_i(13 downto 8);
 
+            when x"C" => -- write heartbeat timeout (bits 63:56)
+              hb_timeout := to_integer(unsigned(cfs_in_i(63 downto 56)));
+              if hb_timeout = 0 then hb_timeout := 100; end if;
+
             when others => null;
           end case;
         end if;
 
-        -- Heartbeat timeout config (continuous from cfs_in_i)
-        hb_timeout := to_integer(unsigned(cfs_in_i(15 downto 8)));
-        if hb_timeout = 0 then hb_timeout := 100; end if;
       end if;
     end if;
   end process;
@@ -397,26 +415,33 @@ begin
   end process;
 
   -- =====================================================================
-  -- Outputs
+  -- Outputs — SINGLE combinacional driver (no multi-driver!)
   -- =====================================================================
   pwm_arm_o <= motors_armed and heartbeat_alive;
 
-  cfs_out_o <= (others => '0');
-  cfs_out_o(31 downto 0)   <= std_ulogic_vector(enc_pos(to_integer(motor_sel)));
-  cfs_out_o(63 downto 32)  <= std_ulogic_vector(enc_vel(to_integer(motor_sel)));
-  cfs_out_o(71) <= motors_armed; cfs_out_o(70) <= heartbeat_alive; cfs_out_o(69) <= not motors_armed;
-  cfs_out_o(79 downto 72) <= std_ulogic_vector(heartbeat_cnt);
-  cfs_out_o(95 downto 80) <= std_ulogic_vector(imu_roll);
-  cfs_out_o(111 downto 96) <= std_ulogic_vector(imu_pitch);
-  cfs_out_o(127 downto 112) <= std_ulogic_vector(imu_yaw);
-  cfs_out_o(143 downto 128) <= std_ulogic_vector(pid_output(0));
-  cfs_out_o(159 downto 144) <= std_ulogic_vector(pid_output(1));
-  cfs_out_o(175 downto 160) <= std_ulogic_vector(pid_output(2));
-  cfs_out_o(191 downto 176) <= std_ulogic_vector(pid_output(3));
-  cfs_out_o(207 downto 192) <= std_ulogic_vector(pid_output(4));
-  cfs_out_o(223 downto 208) <= std_ulogic_vector(pid_output(5));
-  cfs_out_o(239 downto 224) <= std_ulogic_vector(depth_cm);
-  cfs_out_o(255 downto 240) <= std_ulogic_vector(depth_raw_temp);
+  process(motor_sel, enc_pos, enc_vel, motors_armed, heartbeat_alive,
+          heartbeat_cnt, imu_roll, imu_pitch, imu_yaw,
+          pid_output, depth_cm, depth_raw_temp)
+    variable v : std_ulogic_vector(255 downto 0);
+  begin
+    v := (others => '0');
+    v(31  downto 0)   := std_ulogic_vector(enc_pos(to_integer(motor_sel)));
+    v(63  downto 32)  := std_ulogic_vector(enc_vel(to_integer(motor_sel)));
+    v(71) := motors_armed; v(70) := heartbeat_alive; v(69) := not motors_armed;
+    v(79  downto 72)  := std_ulogic_vector(heartbeat_cnt);
+    v(95  downto 80)  := std_ulogic_vector(imu_roll);
+    v(111 downto 96)  := std_ulogic_vector(imu_pitch);
+    v(127 downto 112) := std_ulogic_vector(imu_yaw);
+    v(143 downto 128) := std_ulogic_vector(pid_output(0));
+    v(159 downto 144) := std_ulogic_vector(pid_output(1));
+    v(175 downto 160) := std_ulogic_vector(pid_output(2));
+    v(191 downto 176) := std_ulogic_vector(pid_output(3));
+    v(207 downto 192) := std_ulogic_vector(pid_output(4));
+    v(223 downto 208) := std_ulogic_vector(pid_output(5));
+    v(239 downto 224) := std_ulogic_vector(depth_cm);
+    v(255 downto 240) := std_ulogic_vector(depth_raw_temp);
+    cfs_out_o <= v;
+  end process;
 
   motor_map: for ch in 0 to 7 generate
     motor_pwm_o(ch*16+15 downto ch*16) <= std_ulogic_vector(motor_out(ch));
