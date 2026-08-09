@@ -41,7 +41,9 @@ architecture rtl of neorv32_rov_motors is
   type motor_array_t is array (0 to 7) of unsigned(15 downto 0);
   signal motor_out : motor_array_t := (others => to_unsigned(32768, 16));
   signal motor_out_slewed : motor_array_t := (others => to_unsigned(32768, 16));
-  signal mixer_trig : std_ulogic := '0'; -- strobe to run mixer
+  signal mixer_trig : std_ulogic := '0'; -- strobe to run mixer (from PID FSM)
+  signal mixer_trig_man : std_ulogic := '0'; -- manual trigger from CFS
+  signal mixer_trig_comb : std_ulogic;       -- combined trigger
 
   -- CFS command edge detection
   signal cfs_in_d : std_ulogic_vector(255 downto 0) := (others => '0');
@@ -68,6 +70,17 @@ architecture rtl of neorv32_rov_motors is
   signal pid_enable    : std_ulogic_vector(5 downto 0) := (others => '0');
   signal pid_error_prev : ctrl_array_t := (others => SFIX_ZERO);
   signal pid_integral   : ctrl_array_t := (others => SFIX_ZERO);
+
+  -- PID pipeline (3-stage, fixes WNS timing)
+  type pid_state_t is (IDLE, S1, S2, S3, S3_LATCH);
+  signal pid_state  : pid_state_t := IDLE;
+  signal pid_ax     : integer range 0 to 5 := 0;
+  signal pid_err_s1 : sfix_t := SFIX_ZERO;
+  signal pid_p_s1   : sfix_t := SFIX_ZERO;
+  signal pid_err_s2 : sfix_t := SFIX_ZERO;
+  signal pid_p_s2   : sfix_t := SFIX_ZERO;
+  signal pid_i_s2   : sfix_t := SFIX_ZERO;
+  signal pid_d_s2   : sfix_t := SFIX_ZERO;
 
   -- Timers
   signal pid_tick    : std_ulogic := '0';  -- strobe @ 400 Hz
@@ -105,6 +118,9 @@ architecture rtl of neorv32_rov_motors is
   constant HB_DIV  : natural := 99999;  -- 1 kHz @ 100 MHz
 
 begin
+
+  -- Combine mixer triggers from PID FSM and manual CFS writes
+  mixer_trig_comb <= mixer_trig or mixer_trig_man;
 
   -- =====================================================================
   -- CFS Command Edge Detection (SINGLE process drives cmd_strobe)
@@ -238,10 +254,10 @@ begin
         hb_timer := 0; hb_timeout := 100;
       else
         -- Default strobe resets (single-pulse)
-        mixer_trig <= '0';
         enc_clear  <= '0';
         imu_update <= '0';
         depth_update <= '0';
+        mixer_trig_man <= '0';
 
         -- Heartbeat timer (1ms tick)
         if hb_ms_tick = '1' then
@@ -279,7 +295,7 @@ begin
 
             when x"6" => -- write control setpoint
               i := to_integer(axis_sel);
-              if i < 6 then control_sp(i) <= s16_val; mixer_trig <= '1'; end if;
+              if i < 6 then control_sp(i) <= s16_val; mixer_trig_man <= '1'; end if;
 
             when x"7" => -- write IMU raw data
               i := to_integer(axis_sel);
@@ -316,46 +332,93 @@ begin
           end case;
         end if;
 
-        -- Auto-trigger mixer when PID is running (hardware control loop)
-        if pid_tick = '1' and pid_enable /= "000000" then
-          mixer_trig <= '1';
-        end if;
-
       end if;
     end if;
   end process;
 
   -- =====================================================================
-  -- PID Controller: all 6 axes updated on pid_tick strobe
+  -- PID Controller: 3-stage pipeline (fixes WNS timing @ 100 MHz)
   -- =====================================================================
   process(clk_i)
     constant I_MAX : sfix_t := to_signed(16384, 16);
     constant I_MIN : sfix_t := to_signed(-16384, 16);
-    variable error, p_term, i_term, d_term : sfix_t;
+    variable error, p_term : sfix_t;
     variable pid_sum : signed(31 downto 0);
   begin
     if rising_edge(clk_i) then
       if rstn_i = '0' then
+        pid_state <= IDLE; pid_ax <= 0;
+        mixer_trig <= '0';
+        pid_err_s1 <= SFIX_ZERO; pid_p_s1 <= SFIX_ZERO;
+        pid_err_s2 <= SFIX_ZERO; pid_p_s2 <= SFIX_ZERO; pid_i_s2 <= SFIX_ZERO; pid_d_s2 <= SFIX_ZERO;
         pid_error_prev <= (others => SFIX_ZERO);
         pid_integral <= (others => SFIX_ZERO);
         pid_output <= (others => SFIX_ZERO);
-      elsif pid_tick = '1' then
-        for ax in 0 to 5 loop
-          if pid_enable(ax) = '1' then
-            error := control_sp(ax) - pid_current(ax);
-            p_term := resize(shift_right(pid_kp(ax) * error, 14), 16);
-            i_term := resize(shift_right(pid_ki(ax) * error, 14), 16);
-            pid_integral(ax) <= pid_integral(ax) + i_term;
-            if pid_integral(ax) > I_MAX then pid_integral(ax) <= I_MAX;
-            elsif pid_integral(ax) < I_MIN then pid_integral(ax) <= I_MIN; end if;
-            d_term := resize(shift_right(pid_kd(ax) * (error - pid_error_prev(ax)), 14), 16);
-            pid_error_prev(ax) <= error;
-            pid_sum := resize(p_term, 32) + resize(pid_integral(ax), 32) + resize(d_term, 32);
-            if pid_sum > 16383 then pid_output(ax) <= to_signed(16383, 16);
-            elsif pid_sum < -16384 then pid_output(ax) <= to_signed(-16384, 16);
-            else pid_output(ax) <= resize(pid_sum, 16); end if;
-          end if;
-        end loop;
+      else
+        case pid_state is
+          when IDLE =>
+            mixer_trig <= '0';
+            if pid_tick = '1' then
+              pid_state <= S1; pid_ax <= 0;
+            end if;
+
+          when S1 =>
+            if pid_enable(pid_ax) = '1' then
+              error := control_sp(pid_ax) - pid_current(pid_ax);
+              p_term := resize(shift_right(pid_kp(pid_ax) * error, 14), 16);
+            else
+              error := SFIX_ZERO; p_term := SFIX_ZERO;
+            end if;
+            pid_err_s1 <= error;
+            pid_p_s1   <= p_term;
+            pid_state <= S2;
+
+          when S2 =>
+            if pid_enable(pid_ax) = '1' then
+              pid_i_s2 <= resize(shift_right(pid_ki(pid_ax) * pid_err_s1, 14), 16);
+              pid_d_s2 <= resize(shift_right(pid_kd(pid_ax) * (pid_err_s1 - pid_error_prev(pid_ax)), 14), 16);
+            else
+              pid_i_s2 <= SFIX_ZERO; pid_d_s2 <= SFIX_ZERO;
+            end if;
+            pid_err_s2 <= pid_err_s1;
+            pid_p_s2   <= pid_p_s1;
+            pid_state <= S3;
+
+          when S3 =>
+            if pid_enable(pid_ax) = '1' then
+              -- Anti-windup on integrator
+              if pid_integral(pid_ax) + pid_i_s2 > I_MAX then
+                pid_integral(pid_ax) <= I_MAX;
+              elsif pid_integral(pid_ax) + pid_i_s2 < I_MIN then
+                pid_integral(pid_ax) <= I_MIN;
+              else
+                pid_integral(pid_ax) <= pid_integral(pid_ax) + pid_i_s2;
+              end if;
+              -- Error prev for next D term
+              pid_error_prev(pid_ax) <= pid_err_s2;
+              -- Sum: P + I + D, saturate
+              pid_sum := resize(pid_p_s2, 32) + resize(pid_integral(pid_ax) + pid_i_s2, 32) + resize(pid_d_s2, 32);
+              if pid_sum > 16383 then
+                pid_output(pid_ax) <= to_signed(16383, 16);
+              elsif pid_sum < -16384 then
+                pid_output(pid_ax) <= to_signed(-16384, 16);
+              else
+                pid_output(pid_ax) <= resize(pid_sum, 16);
+              end if;
+            end if;
+            pid_state <= S3_LATCH;
+
+          when S3_LATCH =>
+            if pid_ax = 5 then
+              pid_state <= IDLE;
+              if pid_enable /= "000000" then mixer_trig <= '1'; end if;
+            else
+              pid_ax <= pid_ax + 1;
+              pid_state <= S1;
+            end if;
+
+          when others => pid_state <= IDLE;
+        end case;
       end if;
     end if;
   end process;
@@ -383,7 +446,7 @@ begin
       else
         case fsm is
           when IDLE =>
-            if mixer_trig = '1' then fsm := MAC0; m := 0; acc := (others => '0'); end if;
+            if mixer_trig_comb = '1' then fsm := MAC0; m := 0; acc := (others => '0'); end if;
           when MAC0 | MAC1 | MAC2 | MAC3 | MAC4 | MAC5 =>
             case fsm is
               when MAC0 => prod := resize(mixer_coeff(m*6+0) * mix_val(0), 32); acc := resize(prod(29 downto 14), 32); fsm := MAC1;
