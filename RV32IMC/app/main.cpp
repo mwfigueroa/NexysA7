@@ -368,12 +368,17 @@ static void process_command() {
               uart_puts(g_telem_enabled ? "\nTelemetry ON\n" : "\nTelemetry OFF\n"); break;
     case 'r': cmd_reinit(); break;
     case 'x':
-        uart_puts("\n--- CFS Raw ---\n");
+        uart_puts("\n--- CFS via HAL ---\n");
+        uart_puts("CFS present: ");
+        uart_puts(neorv32_cfs_available() ? "YES" : "NO");
+        uart_puts("\n");
         for (int i = 0; i < 8; i++) {
-            uart_puts("R"); neorv32_uart0_putc('0'+i); uart_puts(":0x");
-            uart_print_hex32(*(volatile uint32_t*)(NEORV32_CFS_BASE + i*4));
+            uart_puts("HAL REG"); neorv32_uart0_putc('0'+i); uart_puts(":0x");
+            uart_print_hex32(NEORV32_CFS->REG[i]);
             uart_puts(" ");
         }
+        uart_puts("\n--- GPIO (sanity) ---\nGPIO_IN: 0x");
+        uart_print_hex32(neorv32_gpio_port_get());
         uart_puts("\n");
         break;
     default:  uart_puts("\nUnknown command. 'h' for help.\n"); break;
@@ -411,7 +416,7 @@ int main() {
     neorv32_gpio_port_set(0);
 
     // --- ROV CFS init ---
-    uart_puts("CFS: initializing ROV subsystem...\n");
+    uart_puts("CFS: initializing ROV subsystem (base 0xFFEB0000)...\n");
     rov_init();
     for (int i = 0; i < 48; i++) {
         int16_t c = (int16_t)((uint16_t)kDefaultMixer[i] << 8);
