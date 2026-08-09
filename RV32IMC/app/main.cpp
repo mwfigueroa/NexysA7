@@ -373,6 +373,15 @@ static void process_command() {
     case 'v': g_telem_enabled = !g_telem_enabled;
               uart_puts(g_telem_enabled ? "\nTelemetry ON\n" : "\nTelemetry OFF\n"); break;
     case 'r': cmd_reinit(); break;
+    case 'x':
+        uart_puts("\n--- CFS Raw ---\n");
+        for (int i = 0; i < 8; i++) {
+            uart_puts("R"); neorv32_uart0_putc('0'+i); uart_puts(":0x");
+            uart_print_hex32(*(volatile uint32_t*)(NEORV32_CFS_BASE + i*4));
+            uart_puts(" ");
+        }
+        uart_puts("\n");
+        break;
     default:  uart_puts("\nUnknown command. 'h' for help.\n"); break;
     }
 

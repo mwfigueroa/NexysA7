@@ -117,6 +117,15 @@ architecture rtl of neorv32_rov_motors is
   constant PID_DIV : natural := 249999; -- 400 Hz @ 100 MHz
   constant HB_DIV  : natural := 99999;  -- 1 kHz @ 100 MHz
 
+  -- Prevent Vivado from optimizing away CFS-connected signals
+  attribute DONT_TOUCH : string;
+  attribute DONT_TOUCH of cfs_out_o : signal is "TRUE";
+  attribute DONT_TOUCH of motors_armed : signal is "TRUE";
+  attribute DONT_TOUCH of heartbeat_alive : signal is "TRUE";
+
+  attribute KEEP_HIERARCHY : string;
+  attribute KEEP_HIERARCHY of rtl : architecture is "TRUE";
+
 begin
 
   -- Combine mixer triggers from PID FSM and manual CFS writes
@@ -435,7 +444,7 @@ begin
     variable prod_reg : signed(31 downto 0); -- registered product
     variable prod : signed(31 downto 0);
     impure function mix_val(ax : integer) return sfix_t is
-    begin
+begin
       if pid_enable(ax) = '1' then return pid_output(ax);
       else return control_sp(ax); end if;
     end function;

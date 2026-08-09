@@ -111,9 +111,7 @@ void rov_init(void) {
 void rov_heartbeat(void) {
     static uint8_t toggle;
     toggle ^= 1u;
-    // Heartbeat is retriggered by cfs_in[8], not by the command edge.
-    CFS_REG0 = ((uint32_t)CMD_HEARTBEAT << 4) | ((uint32_t)toggle << 8);
-    _rov_wait_cfs();
+    _rov_cmd(CMD_HEARTBEAT, (uint16_t)toggle << 8, 0);
 }
 
 void rov_arm(void) {
