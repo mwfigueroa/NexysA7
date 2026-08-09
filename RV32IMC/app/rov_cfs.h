@@ -43,15 +43,15 @@
 #define ROV_ENC_POS     0   // encoder position [31:0]
 #define ROV_ENC_VEL     1   // encoder velocity [63:32]
 #define ROV_STATUS      2   // safety status [71:64]
-#define ROV_IMU_ROLL    3   // IMU roll [95:80]
+#define ROV_IMU_ROLL    2   // IMU roll [95:80]
 #define ROV_IMU_PITCH   3   // IMU pitch [111:96] (upper half of reg3)
-#define ROV_IMU_YAW     4   // IMU yaw [127:112]
+#define ROV_IMU_YAW     3   // IMU yaw [127:112]
 #define ROV_PID_OUT0    4   // PID output axis 0 [143:128] (upper half)
-#define ROV_PID_OUT1    5   // PID output axis 1
+#define ROV_PID_OUT1    4   // PID output axis 1
 #define ROV_PID_OUT2    5   // PID output axis 2
-#define ROV_PID_OUT3    6   // PID output axis 3
+#define ROV_PID_OUT3    5   // PID output axis 3
 #define ROV_PID_OUT4    6   // PID output axis 4 (upper half)
-#define ROV_PID_OUT5    7   // PID output axis 5
+#define ROV_PID_OUT5    6   // PID output axis 5
 #define ROV_DEPTH       7   // depth cm [239:224] (upper half)
 
 // --- Safety status bits in ROV_STATUS ---

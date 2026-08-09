@@ -112,6 +112,10 @@ architecture rtl of neorv32_rov_motors is
   signal depth_raw_temp     : signed(15 downto 0) := to_signed(200, 16);
   signal depth_cm           : unsigned(15 downto 0) := (others => '0');
   signal depth_update       : std_ulogic := '0';
+  signal depth_diff_s1      : signed(31 downto 0) := (others => '0');
+  signal depth_scaled_s2    : signed(63 downto 0) := (others => '0');
+  signal depth_valid_s1     : std_ulogic := '0';
+  signal depth_valid_s2     : std_ulogic := '0';
 
   -- Constants
   constant PID_DIV : natural := 249999; -- 400 Hz @ 100 MHz
@@ -566,17 +570,35 @@ begin
   -- Depth computation (runs on depth_update strobe)
   -- =====================================================================
   process(clk_i)
-    variable diff : signed(31 downto 0);
-    variable tmp  : signed(31 downto 0);
+    variable tmp : signed(63 downto 0);
   begin
     if rising_edge(clk_i) then
-      if rstn_i = '0' then depth_cm <= (others => '0');
-      elsif depth_update = '1' then
-        diff := signed(depth_raw_pressure) - to_signed(101300, 32);
+      if rstn_i = '0' then
+        depth_cm <= (others => '0');
+        depth_diff_s1 <= (others => '0');
+        depth_scaled_s2 <= (others => '0');
+        depth_valid_s1 <= '0';
+        depth_valid_s2 <= '0';
+      else
+        -- Stage 1: pressure delta.
+        depth_valid_s1 <= depth_update;
+        if depth_update = '1' then
+          depth_diff_s1 <= signed(depth_raw_pressure) - to_signed(101300, 32);
+        end if;
+
+        -- Stage 2: constant multiply.
+        depth_valid_s2 <= depth_valid_s1;
+        if depth_valid_s1 = '1' then
+          depth_scaled_s2 <= depth_diff_s1 * to_signed(10695, 32);
+        end if;
+
+        -- Stage 3: scale and clamp.
+        if depth_valid_s2 = '1' then
         -- cm = diff * 0.0102 ≈ (diff * 10695) >> 20
-        tmp  := resize(shift_right(diff * to_signed(10695, 32), 20), 32);
-        if tmp < 0 then depth_cm <= (others => '0');
-        else depth_cm <= unsigned(tmp(15 downto 0)); end if;
+          tmp := shift_right(depth_scaled_s2, 20);
+          if tmp < 0 then depth_cm <= (others => '0');
+          else depth_cm <= unsigned(tmp(15 downto 0)); end if;
+        end if;
       end if;
     end if;
   end process;

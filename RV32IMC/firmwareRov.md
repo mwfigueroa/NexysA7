@@ -36,6 +36,7 @@ Autodetecta el puerto y ejecuta la secuencia del bootloader (`u` → binario →
 | `l` | Test de LEDs |
 | `v` | Activar/desactivar telemetría automática |
 | `r` | Re-inicializar ROV |
+| `x` | Volcar los 8 registros CFS crudos para diagnÃ³stico |
 
 ## Funcionamiento automático
 

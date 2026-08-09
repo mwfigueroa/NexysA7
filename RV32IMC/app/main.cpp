@@ -1,13 +1,6 @@
 #include <neorv32.h>
 #include "rov_cfs.h"
 
-// KNOWN HARDWARE ISSUE (2026-08-09):
-// CFS write path is not propagating commands to the ROV module.
-// CFS_REG2 reads 0x00000000 regardless of heartbeat/setpoint/PID writes.
-// Encoder read path (CFS_REG0/1) works via motor_sel combinatorics.
-// Root cause suspected in cmd_strobe edge-detection or rstn timing.
-// Requires simulation (xsim/ghdl) of neorv32_rov_motors with CFS stimuli.
-
 #ifndef RV32IMC_CPU_HZ
 #error "Defina RV32IMC_CPU_HZ (lo hace CMakeLists.txt)."
 #endif
@@ -147,6 +140,7 @@ static void cmd_help() {
         " l [mask]       LED test (default 0xFF)\n"
         " v              Toggle telemetry on/off\n"
         " r              ROV re-init\n"
+        " x              Dump raw CFS registers (diagnostic)\n"
     );
 }
 

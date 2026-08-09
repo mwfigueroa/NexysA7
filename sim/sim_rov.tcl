@@ -4,6 +4,7 @@
 
 set project_dir  "P:/NexysA7"
 set neorv32_dir  "P:/NexysA7/neorv32"
+set neorv32_home "P:/neorv32"
 set sim_dir      "P:/NexysA7/sim"
 set sim_out      "$project_dir/sim_out"
 set launch_gui   0
@@ -22,6 +23,9 @@ puts ""
 
 # Compile VHDL sources
 puts "--- Compile (xvhdl) ---"
+exec xvhdl --incr --relax --2008 -work neorv32 \
+    "$neorv32_home/rtl/core/neorv32_package.vhd" \
+    "$neorv32_dir/neorv32_cfs_custom.vhd" 2>&1
 exec xvhdl --incr --relax --2008 -work xil_defaultlib \
     "$neorv32_dir/neorv32_rov_motors.vhd" \
     "$sim_dir/tb_rov.vhd" 2>&1
@@ -38,7 +42,6 @@ if { $launch_gui } {
 } else {
     puts "--- Simulate (xsim batch) ---"
     set fh [open "run.tcl" w]
-    puts $fh "log_wave -r /*"
     puts $fh "run all"
     puts $fh "quit"
     close $fh
