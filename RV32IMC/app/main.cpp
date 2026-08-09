@@ -9,6 +9,8 @@ static constexpr uint32_t kLedMask  = 0x0000FFFFu;
 static constexpr int      kNumAxes  = 6;
 static constexpr int      kNumMtrs  = 8;
 static constexpr uint32_t kTelemMs  = 2000u;
+static constexpr uint32_t kHeartbeatMs = 50u;
+static constexpr uint32_t kLedToggleMs = 500u;
 
 static const char *const kAxisNames[] = {
     "Surge", "Sway", "Heave", "Roll", "Pitch", "Yaw"
@@ -22,7 +24,8 @@ static const uint8_t kDefaultMixer[48] = {
 };
 
 static uint32_t  g_clock_hz;
-static uint8_t   g_heartbeat_toggle;
+static uint32_t  g_last_heartbeat;
+static uint32_t  g_last_led;
 static uint32_t  g_last_telem;
 static bool      g_telem_enabled;
 
@@ -52,9 +55,10 @@ static void uart_print_hex32(uint32_t n) {
 
 static void uart_print_s114(int16_t v) {
     bool neg = v < 0;
-    if (neg) v = -v;
-    int32_t whole = (v >> 14) & 0x1;
-    int32_t frac  = ((uint32_t)v * 10000u) >> 14;
+    int32_t magnitude = v;
+    if (neg) magnitude = -magnitude;
+    int32_t whole = magnitude >> 14;
+    int32_t frac  = ((uint32_t)magnitude * 10000u) >> 14;
     if (neg) neorv32_uart0_putc('-');
     neorv32_uart0_putc('0' + (whole & 0xF));
     neorv32_uart0_putc('.');
@@ -62,6 +66,25 @@ static void uart_print_s114(int16_t v) {
     fb[4] = '\0';
     for (int i = 3; i >= 0; i--) { fb[i] = '0' + (frac % 10); frac /= 10; }
     uart_puts(fb);
+}
+
+static bool elapsed(uint32_t now, uint32_t then, uint32_t interval_ms) {
+    return (uint32_t)(now - then) >= (g_clock_hz / 1000u) * interval_ms;
+}
+
+static void service_heartbeat() {
+    uint32_t now = neorv32_cpu_csr_read(CSR_MCYCLE);
+    if (elapsed(now, g_last_heartbeat, kHeartbeatMs)) {
+        g_last_heartbeat = now;
+        rov_heartbeat();
+    }
+}
+
+static void delay_with_heartbeat(uint32_t delay_ms) {
+    while (delay_ms--) {
+        neorv32_aux_delay_ms(g_clock_hz, 1);
+        service_heartbeat();
+    }
 }
 
 // ===========================================================================
@@ -81,6 +104,7 @@ static int  parse_int(const char **s) {
 
 static int  parse_hex(const char **s) {
     while (**s == ' ') (*s)++;
+    if ((*s)[0] == '0' && ((*s)[1] == 'x' || (*s)[1] == 'X')) *s += 2;
     int val = 0;
     while (1) {
         char c = **s;
@@ -108,12 +132,11 @@ static void cmd_help() {
         " m              Read IMU (roll, pitch, yaw)\n"
         " d              Read depth (cm)\n"
         " p              Read all PID outputs (6 axes)\n"
-        " t <axis> <val> Set setpoint (s1.14)\n"
-        " k <axis> <kp> <ki> <kd>  Set PID gains (s1.14)\n"
-        " n <axis> <val> Set PID current position\n"
+        " t <axis> <hex> Set setpoint (s1.14)\n"
+        " k <axis> <kp> <ki> <kd>  Set PID gains (s1.14 hex)\n"
+        " n <axis> <hex> Set PID current position\n"
         " g <mask>       Enable PID axes (bitmask 0-63)\n"
-        " w <ch> <duty>  Set PWM duty (12500-25000)\n"
-        " z              Motor sweep test\n"
+        " w, z           Unavailable: native PWM is not connected to the ROV\n"
         " l [mask]       LED test (default 0xFF)\n"
         " v              Toggle telemetry on/off\n"
         " r              ROV re-init\n"
@@ -142,13 +165,13 @@ static void cmd_status() {
 static void cmd_arm(bool arm) {
     if (arm) {
         uart_puts("\nArming motors...\n");
-        for (int i = 0; i < 5; i++) { rov_heartbeat(); neorv32_aux_delay_ms(g_clock_hz, 10); }
-        _rov_cmd(CMD_ARM, 0);
+        for (int i = 0; i < 5; i++) { rov_heartbeat(); delay_with_heartbeat(10); }
+        rov_arm();
     } else {
         uart_puts("\nDisarming motors.\n");
         rov_disarm();
     }
-    neorv32_aux_delay_ms(g_clock_hz, 100);
+    delay_with_heartbeat(100);
     cmd_status();
 }
 
@@ -223,44 +246,17 @@ static void cmd_pid_enable(uint8_t mask) {
     rov_enable_pid(mask);
 }
 
-static void cmd_pwm(int ch, int duty) {
-    if (ch < 0 || ch >= kNumMtrs) { uart_puts("Invalid channel\n"); return; }
-    if (duty < 12500) duty = 12500;
-    if (duty > 25000) duty = 25000;
-    neorv32_pwm_ch_set_duty(ch, duty);
-    uart_puts("PWM CH"); uart_print_dec(ch);
-    uart_puts(" = "); uart_print_dec(duty); uart_puts("\n");
-}
-
-static void cmd_motor_sweep() {
-    uart_puts("\n=== Motor Sweep Test ===\n");
-    neorv32_pwm_set_clock(CLK_PRSC_8);
-    for (int i = 0; i < kNumMtrs; i++) neorv32_pwm_ch_set_duty(i, 18750);
-    neorv32_pwm_ch_enable_mask(0xFF);
-
-    for (int motor = 0; motor < kNumMtrs; motor++) {
-        uart_puts("Motor "); uart_print_dec(motor); uart_puts(": ramp up...\n");
-        for (int d = 12500; d <= 25000; d += 500) {
-            neorv32_pwm_ch_set_duty(motor, d);
-            neorv32_aux_delay_ms(g_clock_hz, 20);
-        }
-        uart_puts("Motor "); uart_print_dec(motor); uart_puts(": ramp down...\n");
-        for (int d = 25000; d >= 12500; d -= 500) {
-            neorv32_pwm_ch_set_duty(motor, d);
-            neorv32_aux_delay_ms(g_clock_hz, 20);
-        }
-        neorv32_pwm_ch_set_duty(motor, 18750);
-    }
-    uart_puts("Sweep complete. All channels at NEUTRAL.\n");
+static void cmd_native_pwm_unavailable() {
+    uart_puts("Native PWM is disconnected from the ROV outputs; command unavailable.\n");
 }
 
 static void cmd_leds(uint32_t mask) {
     neorv32_gpio_pin_toggle(0);
     for (int i = 0; i < 3; i++) {
         neorv32_gpio_port_set(mask & 0xFFFF);
-        neorv32_aux_delay_ms(g_clock_hz, 200);
+        delay_with_heartbeat(200);
         neorv32_gpio_port_set(0);
-        neorv32_aux_delay_ms(g_clock_hz, 200);
+        delay_with_heartbeat(200);
     }
     neorv32_gpio_port_set(0);
 }
@@ -268,8 +264,7 @@ static void cmd_leds(uint32_t mask) {
 static void cmd_reinit() {
     uart_puts("\nRe-initializing ROV...\n");
     rov_disarm();
-    neorv32_aux_delay_ms(g_clock_hz, 100);
-    g_heartbeat_toggle = 0;
+    delay_with_heartbeat(100);
     rov_init();
     for (int i = 0; i < 48; i++) {
         int16_t c = (int16_t)((uint16_t)kDefaultMixer[i] << 8);
@@ -361,15 +356,13 @@ static void process_command() {
         break;
     }
     case 'g': { s++; cmd_pid_enable((uint8_t)parse_int(&s)); break; }
-    case 'w': {
+    case 'w': case 'z': cmd_native_pwm_unavailable(); break;
+    case 'l': {
         s++;
-        int ch   = parse_int(&s);
-        int duty = parse_int(&s);
-        cmd_pwm(ch, duty);
+        while (*s == ' ') s++;
+        cmd_leds(*s ? (uint32_t)parse_hex(&s) : 0xFFu);
         break;
     }
-    case 'z': cmd_motor_sweep(); break;
-    case 'l': { s++; cmd_leds((uint32_t)parse_hex(&s)); break; }
     case 'v': g_telem_enabled = !g_telem_enabled;
               uart_puts(g_telem_enabled ? "\nTelemetry ON\n" : "\nTelemetry OFF\n"); break;
     case 'r': cmd_reinit(); break;
@@ -385,7 +378,8 @@ static void process_command() {
 // ===========================================================================
 int main() {
     g_clock_hz        = neorv32_sysinfo_get_clk();
-    g_heartbeat_toggle = 0;
+    g_last_heartbeat  = neorv32_cpu_csr_read(CSR_MCYCLE);
+    g_last_led        = g_last_heartbeat;
     g_last_telem      = 0;
     g_telem_enabled   = false;
     rx_idx            = 0;
@@ -406,13 +400,6 @@ int main() {
     neorv32_gpio_dir_set(kLedMask);
     neorv32_gpio_port_set(0);
 
-    // --- PWM init (hardware PWM 8ch) ---
-    neorv32_pwm_set_clock(CLK_PRSC_8);
-    for (int i = 0; i < kNumMtrs; i++)
-        neorv32_pwm_ch_set_duty(i, 18750);
-    neorv32_pwm_ch_enable_mask(0xFF);
-    uart_puts("PWM: 8ch @ ~190 Hz, neutral (1.5ms).\n");
-
     // --- ROV CFS init ---
     uart_puts("CFS: initializing ROV subsystem...\n");
     rov_init();
@@ -428,10 +415,7 @@ int main() {
     // =======================================================================
     // Main loop
     // =======================================================================
-    uint32_t loop_count = 0;
     for (;;) {
-        loop_count++;
-
         // --- UART RX ---
         if (neorv32_uart0_char_received()) {
             char c = (char)neorv32_uart0_char_received_get();
@@ -449,18 +433,17 @@ int main() {
         }
 
         // --- Heartbeat every 50ms ---
-        if ((loop_count % 5000) == 0) {
-            g_heartbeat_toggle ^= 1;
-            rov_heartbeat();
-        }
+        service_heartbeat();
 
         // --- LED heartbeat ---
-        if ((loop_count % 100000) == 0)
+        uint32_t now = neorv32_cpu_csr_read(CSR_MCYCLE);
+        if (elapsed(now, g_last_led, kLedToggleMs)) {
+            g_last_led = now;
             neorv32_gpio_pin_toggle(0);
+        }
 
         // --- Telemetry ---
         if (g_telem_enabled) {
-            uint32_t now = neorv32_cpu_csr_read(CSR_MCYCLE);
             if (now - g_last_telem >= g_clock_hz * kTelemMs / 1000) {
                 g_last_telem = now;
                 print_telemetry();

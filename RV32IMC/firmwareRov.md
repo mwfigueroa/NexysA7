@@ -7,7 +7,7 @@ Firmware C++ para el procesador **NEORV32 RV32IMC @ 100 MHz** en la Nexys A7-100
 cmake --preset debug
 cmake --build --preset debug
 ```
-Salida: `neorv32_exe.bin` (~7.8 KB) listo para cargar por bootloader UART.
+Salida: `neorv32_exe.bin` (~7 KB) listo para cargar por bootloader UART.
 
 ## Carga en placa
 ```
@@ -28,12 +28,11 @@ Autodetecta el puerto y ejecuta la secuencia del bootloader (`u` → binario →
 | `m` | Leer IMU (roll, pitch, yaw en s1.14) |
 | `d` | Leer profundidad (cm) |
 | `p` | Leer salidas PID de los 6 ejes |
-| `t <eje> <val>` | Setpoint de control (s1.14) |
-| `k <eje> <kp> <ki> <kd>` | Ganancias PID (s1.14) |
+| `t <eje> <hex>` | Setpoint de control (s1.14, hexadecimal s16) |
+| `k <eje> <kp> <ki> <kd>` | Ganancias PID (s1.14 hexadecimal) |
 | `n <eje> <val>` | Posición actual del PID |
 | `g <mask>` | Habilitar PID por eje (bitmask 0-63) |
-| `w <ch> <duty>` | PWM duty directo (12500-25000) |
-| `z` | Barrido secuencial de los 8 motores |
+| `w`, `z` | No disponibles: PWM nativo desconectado de las salidas ROV |
 | `l` | Test de LEDs |
 | `v` | Activar/desactivar telemetría automática |
 | `r` | Re-inicializar ROV |
