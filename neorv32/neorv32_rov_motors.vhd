@@ -424,16 +424,17 @@ begin
   end process;
 
   -- =====================================================================
-  -- Mixer: runs on mixer_trig strobe (pipelined)
+  -- Mixer: 2-stage per MAC (MUL then ADD) — fixes accumulator timing
   -- =====================================================================
   process(clk_i)
-    type mix_fsm_t is (IDLE, MAC0, MAC1, MAC2, MAC3, MAC4, MAC5, DONE);
+    type mix_fsm_t is (IDLE,
+      MUL0, ADD0, MUL1, ADD1, MUL2, ADD2,
+      MUL3, ADD3, MUL4, ADD4, MUL5, ADD5, DONE);
     variable fsm : mix_fsm_t := IDLE;
     variable m : integer range 0 to 7 := 0;
     variable acc : signed(31 downto 0) := (others => '0');
+    variable prod_reg : signed(31 downto 0); -- registered product
     variable prod : signed(31 downto 0);
-    variable bias : unsigned(15 downto 0);
-    -- Mixer input: use PID output when enabled, else manual setpoint
     impure function mix_val(ax : integer) return sfix_t is
     begin
       if pid_enable(ax) = '1' then return pid_output(ax);
@@ -446,24 +447,31 @@ begin
       else
         case fsm is
           when IDLE =>
-            if mixer_trig_comb = '1' then fsm := MAC0; m := 0; acc := (others => '0'); end if;
-          when MAC0 | MAC1 | MAC2 | MAC3 | MAC4 | MAC5 =>
-            case fsm is
-              when MAC0 => prod := resize(mixer_coeff(m*6+0) * mix_val(0), 32); acc := resize(prod(29 downto 14), 32); fsm := MAC1;
-              when MAC1 => prod := resize(mixer_coeff(m*6+1) * mix_val(1), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC2;
-              when MAC2 => prod := resize(mixer_coeff(m*6+2) * mix_val(2), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC3;
-              when MAC3 => prod := resize(mixer_coeff(m*6+3) * mix_val(3), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC4;
-              when MAC4 => prod := resize(mixer_coeff(m*6+4) * mix_val(4), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := MAC5;
-              when MAC5 => prod := resize(mixer_coeff(m*6+5) * mix_val(5), 32); acc := acc + resize(prod(29 downto 14), 32); fsm := DONE;
-              when others => null;
-            end case;
+            if mixer_trig_comb = '1' then fsm := MUL0; m := 0; acc := (others => '0'); end if;
+
+          -- Stage: MUL (compute product, register)
+          when MUL0 => prod := resize(mixer_coeff(m*6+0) * mix_val(0), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD0;
+          when MUL1 => prod := resize(mixer_coeff(m*6+1) * mix_val(1), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD1;
+          when MUL2 => prod := resize(mixer_coeff(m*6+2) * mix_val(2), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD2;
+          when MUL3 => prod := resize(mixer_coeff(m*6+3) * mix_val(3), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD3;
+          when MUL4 => prod := resize(mixer_coeff(m*6+4) * mix_val(4), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD4;
+          when MUL5 => prod := resize(mixer_coeff(m*6+5) * mix_val(5), 32); prod_reg := resize(prod(29 downto 14), 32); fsm := ADD5;
+
+          -- Stage: ADD (accumulate using registered product, then next MUL or DONE)
+          when ADD0 => acc := prod_reg; fsm := MUL1;
+          when ADD1 => acc := acc + prod_reg; fsm := MUL2;
+          when ADD2 => acc := acc + prod_reg; fsm := MUL3;
+          when ADD3 => acc := acc + prod_reg; fsm := MUL4;
+          when ADD4 => acc := acc + prod_reg; fsm := MUL5;
+          when ADD5 => acc := acc + prod_reg; fsm := DONE;
+
           when DONE =>
-            -- Saturation clamp: prevent wrap-around on overflow
+            -- Saturation clamp
             if acc > 32767 then acc := to_signed(32767, 32);
             elsif acc < -32768 then acc := to_signed(-32768, 32); end if;
-            -- Convert to PWM duty: neutral(32768) + saturated_correction
             motor_out(m) <= resize(unsigned(to_signed(32768, 17) + resize(acc, 17)), 16);
-            if m = 7 then fsm := IDLE; else m := m + 1; acc := (others => '0'); fsm := MAC0; end if;
+            if m = 7 then fsm := IDLE; else m := m + 1; acc := (others => '0'); fsm := MUL0; end if;
+
           when others => fsm := IDLE;
         end case;
       end if;
