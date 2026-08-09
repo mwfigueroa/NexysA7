@@ -247,7 +247,6 @@ begin
         mixer_coeff(3*6+3) <= -SFIX_ONE; mixer_coeff(7*6+3) <= -SFIX_ONE;
         mixer_coeff(0*6+4) <= SFIX_ONE; mixer_coeff(4*6+4) <= SFIX_ONE;
         mixer_coeff(2*6+4) <= -SFIX_ONE; mixer_coeff(6*6+4) <= -SFIX_ONE;
-        mixer_trig <= '0';
         pid_kp <= (others => SFIX_ZERO); pid_ki <= (others => SFIX_ZERO); pid_kd <= (others => SFIX_ZERO);
         pid_enable <= (others => '0');
         imu_update <= '0'; depth_update <= '0';
