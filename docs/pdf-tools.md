@@ -2,7 +2,41 @@
 
 Kit de extracción de PDFs para datasheets, schematics y reference manuals.
 
-## Herramientas instaladas
+## MCP Server: pdf-mcp (recomendado)
+
+**[pdf-mcp](https://github.com/jztan/pdf-mcp)** v2.1.0 — integrado como MCP server en opencode.
+
+13 herramientas especializadas para PDFs:
+
+| Herramienta | Función |
+|---|---|
+| `pdf_info` | Metadata, TOC, detección de páginas escaneadas |
+| `pdf_search` | Búsqueda híbrida: BM25 (keywords) + semántica |
+| `pdf_read_pages` | Leer páginas específicas sin reventar contexto |
+| `pdf_read_all` | Leer documento completo |
+| `pdf_get_toc` | Tabla de contenidos completa |
+| `pdf_render_pages` | Renderizar páginas como imagen PNG |
+| `pdf_extract_chart` | Extraer datos (x,y) de gráficos vectoriales |
+| `pdf_corpus_warm` | Indexar carpeta de PDFs completa |
+| `pdf_corpus_search` | Buscar en todos los PDFs de una carpeta |
+| `pdf_corpus_overview` | Resumen por documento de una carpeta |
+| `pdf_cache_stats` | Estadísticas de caché SQLite |
+| `pdf_cache_clear` | Limpiar caché |
+| `server_info` | Capacidades activas (OCR, multi-columna, semántico) |
+
+**Capacidades clave:**
+- Búsqueda semántica + keywords combinadas (RRF)
+- Extracción de tablas con coordenadas de origen
+- Column-aware para PDFs multi-columna
+- OCR vía Tesseract para PDFs escaneados
+- Detección de texto oculto (anti-injection)
+- Caché SQLite persistente entre sesiones
+- Sin límite de tamaño — lee solo las páginas necesarias
+
+**Instalado con:** `pip install pdf-mcp[multicolumn]` + `tesseract-ocr`  
+**Config:** `C:\Users\laboratorio\.config\opencode\opencode.jsonc` → `pdf-mcp`
+
+## Herramientas CLI (alternativa directa)
 
 | Herramienta | Tipo | Uso principal |
 |---|---|---|
