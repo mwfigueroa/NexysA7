@@ -2,6 +2,13 @@
 
 Placa **Digilent Nexys A7-100T** (Xilinx Artix-7 XC7A100T-1CSG324).
 
+## Herramientas
+
+| Categoría | Doc |
+|---|---|
+| **PDFs** (datasheets, schematics, manuals) | [`docs/pdf-tools.md`](docs/pdf-tools.md) |
+| Ethernet Telemetry Plan | [`docs/ethernet-telemetry-plan.md`](docs/ethernet-telemetry-plan.md) |
+
 ## Proyectos
 
 | Proyecto | Rama | Descripción |
