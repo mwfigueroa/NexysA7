@@ -95,7 +95,8 @@ uint16_t depth = rov_read_depth_cm();   // leer profundidad
 | **4** | `d9ae69e` | JTAG Debug (OCD) habilitado |
 | **fix** | `718d97f` | 0 Critical Warnings (pin V8→T11) |
 | **fix** | `0834dd6` | **CFS real** (8 regs CPU↔ROV) + strobes + arm_timer + servo_pulse |
-| **test** | `e0ddde4` | motor_sweep: barrido PWM 8 canales |
+| **fix** | `e0ddde4` | motor_sweep: barrido PWM 8 canales |
+| **fix** | `f328225` | XDC auditado vs Master XDC oficial: LEDs/switches/PWM→JA/SPI/TWI corregidos, SW[15:0]→GPIO, firmware rov_main + cfs_test validados en HW |
 
 ### ⚠️ Estado actual
 
