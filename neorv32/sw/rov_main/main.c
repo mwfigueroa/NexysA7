@@ -51,6 +51,8 @@ static int      g_failsafe_seen;
 static int      g_motor_test;     // 1 = motor test activo
 static int      g_mt_dir;         // 0 = subida, 1 = bajada
 static int      g_mt_step;
+static int      g_mt_pause;       // 1 = pausa en neutro al inicio de ciclo
+static int16_t  g_mt_sp;          // acumulador de setpoint
 static uint64_t g_mt_next;
 
 // =============================================================================
@@ -353,8 +355,10 @@ static void cmd_motor_test(int mode) {
         g_motor_test = 1;
         g_mt_dir     = 0;
         g_mt_step    = 0;
+        g_mt_pause   = 0;
+        g_mt_sp      = 0;
         g_mt_next    = neorv32_cpu_get_cycle();
-        uart_puts("Motor test ON: barrido 1140-1860 us en los 8 motores. 'w 0' para parar.\n");
+        uart_puts("Motor test ON: barrido FORWARD suave 1500-1860 us en los 8 canales. 'w 0' para parar.\n");
     } else {
         if (!g_motor_test) { uart_puts("Motor test no activo.\n"); return; }
         g_motor_test = 0;
@@ -369,17 +373,35 @@ static void cmd_motor_test(int mode) {
 
 static void motor_test_tick(uint64_t now) {
     if (!g_motor_test) return;
-    if ((uint64_t)(now - g_mt_next) < ((uint64_t)g_clock_hz * 25u) / 1000u) return;
-    g_mt_next += ((uint64_t)g_clock_hz * 25u) / 1000u;
 
-    int16_t sp = (int16_t)(-14746 + (int32_t)g_mt_step * 737); // ~90% del rango
-    rov_set_setpoint(AXIS_SURGE, sp);
-
-    if (g_mt_dir == 0) {
-        if (++g_mt_step >= 40) g_mt_dir = 1;
-    } else {
-        if (--g_mt_step <= 0) g_mt_dir = 0;
+    // pausa de 1 s en neutro al inicio de cada ciclo
+    if (g_mt_pause) {
+        if ((uint64_t)(now - g_mt_next) >= g_clock_hz) {
+            g_mt_pause = 0;
+            g_mt_next  = now;
+        }
+        return;
     }
+
+    // lento en el deadband del ESC (pasos 0-9), mas rapido despues
+    uint32_t step_ms = (g_mt_step < 10) ? 40u : 25u;
+    if ((uint64_t)(now - g_mt_next) < ((uint64_t)g_clock_hz * step_ms) / 1000u) return;
+    g_mt_next += ((uint64_t)g_clock_hz * step_ms) / 1000u;
+
+    int16_t delta = (int16_t)((g_mt_step < 10) ? 280 : 845);
+    if (g_mt_dir == 0) {
+        g_mt_sp += delta;
+        if (++g_mt_step >= 25) g_mt_dir = 1;
+    } else {
+        g_mt_sp -= delta;
+        if (--g_mt_step <= 0) {
+            g_mt_dir   = 0;
+            g_mt_sp    = 0;
+            g_mt_pause = 1;
+            g_mt_next  = now;
+        }
+    }
+    rov_set_setpoint(AXIS_SURGE, g_mt_sp);
 }
 
 static void cmd_leds(uint32_t mask) {
