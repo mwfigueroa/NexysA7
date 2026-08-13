@@ -16,6 +16,7 @@
 
 #include <neorv32.h>
 #include "rov_cfs.h"
+#include "sensors.h"
 
 #define NUM_AXES       6
 #define NUM_MTRS       8
@@ -111,6 +112,9 @@ static void delay_with_heartbeat(uint32_t delay_ms) {
 static void control_tick(void) {
     uint8_t st = rov_read_status();
 
+    // sensores -> CFS (gyro 20 Hz, profundidad 4 Hz)
+    sensors_poll();
+
     // failsafe monitor: heartbeat lost -> motors disarmed by hardware
     if (!(st & STATUS_ARMED)) {
         if (!g_failsafe_seen) {
@@ -183,6 +187,7 @@ static void cmd_help(void) {
         " e [motor]      Read encoder (0-7, or all)\n"
         " m              Read IMU (roll, pitch, yaw)\n"
         " d              Read depth (cm)\n"
+        " u              Sensor status (MPU9250 / MS5837)\n"
         " p              Read PID outputs (6 axes)\n"
         " t <axis> <hex> Set setpoint (s1.14)\n"
         " k <axis> <kp> <ki> <kd>  Set PID gains (s1.14 hex)\n"
@@ -403,6 +408,7 @@ static void process_command(void) {
     }
     case 'm': cmd_imu(); break;
     case 'd': cmd_depth(); break;
+    case 'u': sensors_status(); break;
     case 'p': cmd_pid_outputs(); break;
     case 't': {
         s++;
@@ -483,6 +489,10 @@ int main(void) {
     uart_puts("Clock: "); uart_dec((int32_t)g_clock_hz); uart_puts(" Hz\n");
 
     neorv32_gpio_port_set(0);
+
+    // --- Sensores primero (init lento; si se hiciera tras arm, el failsafe
+    //     desarmaría al ROV antes de arrancar el loop) ---
+    sensors_init();
 
     // --- ROV init: hb timeout 200ms, heartbeat, arm, setpoints neutral ---
     uart_puts("CFS: initializing ROV subsystem...\n");
