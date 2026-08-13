@@ -135,38 +135,38 @@ begin
         end if;
 
         if servo_tick = '1' then
-          -- ===== JA pinout test: 1 kHz square, walking channels every 1 s =====
-          if servo_us_cnt = 999 then
+          -- ===== Servo mode (50 Hz, 1100-1900us, neutral 1500us @ 32768) =====
+          if servo_us_cnt = SERVO_PERIOD - 1 then
             servo_us_cnt <= (others => '0');
           else
             servo_us_cnt <= servo_us_cnt + 1;
           end if;
-          pwm_hw_out <= (others => '0');
-          if servo_us_cnt < 500 then
-            pwm_hw_out(to_integer(ja_test_ch)) <= '1';
-          end if;
-          if ja_test_us = 999999 then
-            ja_test_us <= (others => '0');
-            ja_test_ch <= ja_test_ch + 1;
-          else
-            ja_test_us <= ja_test_us + 1;
-          end if;
+          for ch in 0 to 7 loop
+            servo_pulse_var := to_unsigned(1100, 16)
+              + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
+            if servo_us_cnt < servo_pulse_var then
+              pwm_hw_out(ch) <= '1';
+            else
+              pwm_hw_out(ch) <= '0';
+            end if;
+          end loop;
           -- ====================================================================
-          -- -- Original servo mode (50 Hz, 1100-1900us):
-          -- if servo_us_cnt = SERVO_PERIOD - 1 then
+          -- -- JA pinout test mode (1 kHz square, walking channels every 1 s):
+          -- if servo_us_cnt = 999 then
           --   servo_us_cnt <= (others => '0');
           -- else
           --   servo_us_cnt <= servo_us_cnt + 1;
           -- end if;
-          -- for ch in 0 to 7 loop
-          --   servo_pulse_var := to_unsigned(1100, 16)
-          --     + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
-          --   if servo_us_cnt < servo_pulse_var then
-          --     pwm_hw_out(ch) <= '1';
-          --   else
-          --     pwm_hw_out(ch) <= '0';
-          --   end if;
-          -- end loop;
+          -- pwm_hw_out <= (others => '0');
+          -- if servo_us_cnt < 500 then
+          --   pwm_hw_out(to_integer(ja_test_ch)) <= '1';
+          -- end if;
+          -- if ja_test_us = 999999 then
+          --   ja_test_us <= (others => '0');
+          --   ja_test_ch <= ja_test_ch + 1;
+          -- else
+          --   ja_test_us <= ja_test_us + 1;
+          -- end if;
         end if;
       end if;
     end if;
