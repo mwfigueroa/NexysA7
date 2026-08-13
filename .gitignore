@@ -32,3 +32,6 @@ temp/
 Thumbs.db
 Desktop.ini
 synth/
+
+# Licencias (no versionar)
+Xilinx.lic
