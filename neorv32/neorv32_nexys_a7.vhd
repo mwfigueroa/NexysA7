@@ -14,7 +14,7 @@ entity neorv32_nexys_a7 is
   port (
     CLK100MHZ  : in  std_ulogic;
     CPU_RESETN : in  std_ulogic;
-    SW         : in  std_ulogic_vector(1 downto 0);
+    SW         : in  std_ulogic_vector(15 downto 0);
     UART_RXD   : in  std_ulogic;
     UART_TXD   : out std_ulogic;
     LED        : out std_ulogic_vector(15 downto 0);
@@ -38,6 +38,7 @@ end entity;
 architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
 
   signal gpio_o     : std_ulogic_vector(31 downto 0);
+  signal gpio_i_ext : std_ulogic_vector(31 downto 0) := (others => '0');
   signal twi_sda_i, twi_sda_o, twi_scl_i, twi_scl_o : std_ulogic;
   signal spi_csn_vec : std_ulogic_vector(7 downto 0);
   signal rstn_sync   : std_ulogic_vector(3 downto 0) := (others => '0');
@@ -60,6 +61,8 @@ architecture neorv32_nexys_a7_rtl of neorv32_nexys_a7 is
   signal servo_tick     : std_ulogic := '0';     -- 1us strobe
   signal servo_us_cnt   : unsigned(15 downto 0) := (others => '0'); -- microsecond counter
   signal pwm_hw_out     : std_ulogic_vector(7 downto 0);
+  signal ja_test_ch     : unsigned(2 downto 0) := (others => '0');  -- JA channel under test
+  signal ja_test_us     : unsigned(19 downto 0) := (others => '0'); -- walk timer (us)
 
   -- ASYNC_REG attributes for synchronizer chains
   attribute ASYNC_REG : string;
@@ -87,6 +90,9 @@ begin
   end process;
   -- Rising edge pulse: irq_sync_v[1]=1 and irq_sync_v[0]=0 means new edge
   irq_edge <= '1' when irq_sync_v(1) = '1' and irq_sync_v(0) = '0' else '0';
+
+  -- Expose all 16 switches to the CPU via GPIO input port
+  gpio_i_ext(15 downto 0) <= SW;
 
   -- -----------------------------------------------------------------------
   -- ROV Motor Subsystem (Safety + Encoders + Mixer + PID + Depth)
@@ -117,6 +123,8 @@ begin
         us_div := 0; servo_tick <= '0';
         servo_us_cnt <= (others => '0');
         pwm_hw_out <= (others => '0');
+        ja_test_ch <= (others => '0');
+        ja_test_us <= (others => '0');
       else
         servo_tick <= '0';
         if us_div = 99 then
@@ -127,22 +135,38 @@ begin
         end if;
 
         if servo_tick = '1' then
-          if servo_us_cnt = SERVO_PERIOD - 1 then
+          -- ===== JA pinout test: 1 kHz square, walking channels every 1 s =====
+          if servo_us_cnt = 999 then
             servo_us_cnt <= (others => '0');
           else
             servo_us_cnt <= servo_us_cnt + 1;
           end if;
-          -- Generate pulse per channel (variable, not signal!)
-          for ch in 0 to 7 loop
-            -- pulse_us = 1100 + motor_duty * 800 / 65536
-            servo_pulse_var := to_unsigned(1100, 16)
-              + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
-            if servo_us_cnt < servo_pulse_var then
-              pwm_hw_out(ch) <= '1';
-            else
-              pwm_hw_out(ch) <= '0';
-            end if;
-          end loop;
+          pwm_hw_out <= (others => '0');
+          if servo_us_cnt < 500 then
+            pwm_hw_out(to_integer(ja_test_ch)) <= '1';
+          end if;
+          if ja_test_us = 999999 then
+            ja_test_us <= (others => '0');
+            ja_test_ch <= ja_test_ch + 1;
+          else
+            ja_test_us <= ja_test_us + 1;
+          end if;
+          -- ====================================================================
+          -- -- Original servo mode (50 Hz, 1100-1900us):
+          -- if servo_us_cnt = SERVO_PERIOD - 1 then
+          --   servo_us_cnt <= (others => '0');
+          -- else
+          --   servo_us_cnt <= servo_us_cnt + 1;
+          -- end if;
+          -- for ch in 0 to 7 loop
+          --   servo_pulse_var := to_unsigned(1100, 16)
+          --     + resize(unsigned(motor_duty(ch*16+15 downto ch*16)) * 800 / 65536, 16);
+          --   if servo_us_cnt < servo_pulse_var then
+          --     pwm_hw_out(ch) <= '1';
+          --   else
+          --     pwm_hw_out(ch) <= '0';
+          --   end if;
+          -- end loop;
         end if;
       end if;
     end if;
@@ -195,7 +219,7 @@ begin
     rstn_wdt_o  => open,
     gpio_dir_o  => open,
     gpio_o      => gpio_o,
-    gpio_i      => (others => '0'),
+    gpio_i      => gpio_i_ext,
     uart0_txd_o => UART_TXD,
     uart0_rxd_i => UART_RXD,
     uart0_rtsn_o => open,

@@ -20,7 +20,7 @@ Placa **Digilent Nexys A7-100T** (Xilinx Artix-7 XC7A100T-1CSG324).
 
 ## NEORV32 — Procesador RISC-V en Nexys A7
 
-Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS +0.83 ns base; ⚠️ WNS=-2.82 ns con PID activo — requiere pipeline).
+Procesador RISC-V de 32 bits (RV32IMC) corriendo a **100 MHz** con timing cerrado (WNS **+0.136 ns**, validado 2026-08-12 tras la auditoría de constraints).
 
 ```bash
 vivado -mode batch -source neorv32/build.tcl    # Síntesis + bitstream (auto-reemplaza CFS template)
@@ -101,11 +101,18 @@ uint16_t depth = rov_read_depth_cm();   // leer profundidad
 
 | Aspecto | Estado |
 |---------|--------|
-| **CFS** | ✅ Funcional — 8 registros mapeados CPU↔ROV |
+| **CFS** | ✅ Funcional — 8 registros mapeados CPU↔ROV, validado en hardware (T1-T11 PASS) |
+| **Constraints** | ✅ XDC auditado contra el Master XDC oficial de Digilent (LEDs, switches, PWM→JA, SPI, TWI corregidos — ver [`docs/SESION-2026-08-12.md`](docs/SESION-2026-08-12.md)) |
+| **PWM** | ✅ Verificado en los 8 pines de PMOD JA (C17, D18, E18, G17, D17, E17, F18, G18) |
+| **Firmware** | ✅ [`neorv32/sw/rov_main`](neorv32/sw/rov_main) — consola + heartbeat + depth/yaw-hold validados |
 | **Build** | ✅ 0 Critical Warnings, 0 Errors |
-| **Timing** | ⚠️ WNS=-2.819ns con PID activo (pipeline pendiente) |
+| **Timing** | ✅ WNS=+0.136 ns / WHS=+0.029 ns @ 100 MHz |
 | **LUTs** | ~5,000 / 63,400 (7.9%) |
 | **DSPs** | ~33 / 240 (13.8%) — validan que el CFS está activo |
+
+**Firmware disponible**: `neorv32/sw/cfs_test` (test de subsistema) y
+`neorv32/sw/rov_main` (firmware principal estilo NVehicleManager). Driver
+corregido: [`neorv32/sw/rov_driver/rov_cfs.h`](neorv32/sw/rov_driver/rov_cfs.h).
 
 ---
 

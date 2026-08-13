@@ -36,7 +36,7 @@ Autodetecta el puerto y ejecuta la secuencia del bootloader (`u` → binario →
 | `l` | Test de LEDs |
 | `v` | Activar/desactivar telemetría automática |
 | `r` | Re-inicializar ROV |
-| `x` | Volcar los 8 registros CFS crudos para diagnÃ³stico |
+| `x` | Volcar los 8 registros CFS crudos para diagnóstico |
 
 ## Funcionamiento automático
 
@@ -48,4 +48,16 @@ Autodetecta el puerto y ejecuta la secuencia del bootloader (`u` → binario →
 
 ## Correcciones críticas
 
-El driver `rov_cfs.h` fue corregido para que las lecturas de IMU (roll/pitch/yaw), PID outputs (6 ejes) y depth coincidan con los offsets de `cfs_out_o` definidos en `neorv32_rov_motors.vhd:581-603`. El canal de status ya era correcto.
+> **Actualizado 2026-08-12**: la corrección anterior de offsets (basada en
+> `neorv32_rov_motors.vhd:581-603`) resultó **errónea**. El driver validado en
+> hardware contra el VHDL real está en
+> [`neorv32/sw/rov_driver/rov_cfs.h`](../../tree/aplicacion/neorv32/sw/rov_driver/rov_cfs.h):
+> CFS base `0xFFEB0000`, cmd en bits [7:4], NOP tras cada comando, y mapa de
+> lectura REG0-REG7 según ground truth (ver
+> [`docs/SESION-2026-08-12.md`](../../tree/aplicacion/docs/SESION-2026-08-12.md)).
+
+### Firmware principal (nuevo, Makefile)
+
+El firmware canónico del ROV es ahora **`neorv32/sw/rov_main/`** (C + Makefile
+picolibc, mismo flujo que `cfs_test`). Esta app CMake/C++ queda como referencia
+histórica con el driver corregido copiado en `app/rov_cfs.h`.

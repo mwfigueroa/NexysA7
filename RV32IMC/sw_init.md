@@ -52,19 +52,21 @@
 | `0xF00B0000` - `0xF00B000F` | 16 B | **WDT** (Watchdog) |
 | `0xF00C0000` - `0xF00C000F` | 16 B | **TRNG** (Random) |
 | `0xFFFF0000` - `0xFFFF1FFF` | 8 KB | **Boot ROM** (bootloader) |
-| `0xFFFFFF00` - `0xFFFFFF1F` | 32 B | **CFS** (ROV Control) |
+| `0xFFEB0000` - `0xFFEB001F` | 32 B | **CFS** (ROV Control) |
 
 ---
 
 ## 3. CFS — Custom Functions Subsystem (Control ROV)
 
-El CFS expone **8 registros de 32 bits** en `0xFFFFFF00` a `0xFFFFFF1C`.
+El CFS expone **8 registros de 32 bits** en `0xFFEB0000` a `0xFFEB001C`.
+> **Validado en hardware (2026-08-12)**: este mapa es el ground truth del VHDL
+> `neorv32_rov_motors.vhd` en el bitstream actual (SDK v1.13.3).
 
 ### 3.1 Registros de Escritura (CPU → ROV)
 
 El CPU escribe en `CFS_REG0` para enviar comandos al hardware ROV.
 
-**CFS_REG0** (`0xFFFFFF00`):
+**CFS_REG0** (`0xFFEB0000`):
 
 | Bits | Campo | Descripción |
 |------|-------|-------------|
@@ -75,9 +77,8 @@ El CPU escribe en `CFS_REG0` para enviar comandos al hardware ROV.
 | `[13:12]` | `gain_sel` | Selector de ganancia PID (0=Kp, 1=Ki, 2=Kd) |
 | `[31:16]` | `value` | Valor del parámetro (s1.14 para PID/mixer) |
 
-**CFS_REG1** (`0xFFFFFF04`): heartbeat timeout por comando `0xC` en bits `[63:56]`.
-**CFS_REG2** (`0xFFFFFF08`): presión raw (depth) en bits `[63:32]`.
-**CFS_REG3** (`0xFFFFFF0C`): temperatura raw (depth) en bits `[79:64]`.
+**CFS_REG1** (`0xFFEB0004`): timeout del heartbeat (comando `0xC`) en bits `[31:24]` (ms); presión raw en `[31:0]` (comando `0xA`, bit10=0, unidades **Pascal**).
+**CFS_REG2** (`0xFFEB0008`): temperatura raw en `[15:0]` (comando `0xA`, bit10=1, unidades **C×10**).
 
 ### 3.2 Comandos CFS
 
@@ -92,9 +93,13 @@ El CPU escribe en `CFS_REG0` para enviar comandos al hardware ROV.
 | `0x7` | **IMU_RAW** | `axis[2:0]`, `value[15:0]` | Escribir dato raw de IMU (s1.14) |
 | `0x8` | **PID_GAIN** | `axis[2:0]`, `gain[1:0]`, `value[15:0]` | Escribir Kp/Ki/Kd del PID (s1.14) |
 | `0x9` | **PID_CURRENT** | `axis[2:0]`, `value[15:0]` | Escribir posición actual del PID (s1.14) |
-| `0xA` | **DEPTH_RAW** | `cfs_in[10]=0→presión`, `=1→temp` | Escribir presión (mbar×100) o temp (C×10) |
+| `0xA` | **DEPTH_RAW** | `cfs_in[10]=0→presión`, `=1→temp` | Escribir presión (Pa) o temp (C×10) |
 | `0xB` | **PID_ENABLE** | `mask[5:0]` en `cfs_in[13:8]` | Habilitar PID por eje (bitmask) |
-| `0xC` | **HB_TIMEOUT** | `timeout[7:0]` en `cfs_in[63:56]` | Timeout del heartbeat en ms (default 100) |
+| `0xC` | **HB_TIMEOUT** | `timeout[7:0]` en `CFS_REG1[31:24]` | Timeout del heartbeat en ms (driver usa 200) |
+
+> **IMPORTANTE**: cada escritura de comando debe ir seguida de un NOP
+> (`CFS_REG0 = 0`) para que el edge-detector del hardware pueda
+> re-disparar el mismo comando dos veces seguidas.
 
 ### 3.3 Registros de Lectura (ROV → CPU)
 
@@ -104,17 +109,19 @@ El CPU lee de los registros CFS para obtener telemetría.
 |----------|------|-------|------|-------------|
 | `CFS_REG0` | `[31:0]` | `enc_pos` | u32 | Posición del encoder seleccionado (32-bit) |
 | `CFS_REG1` | `[31:0]` | `enc_vel` | s32 | Velocidad del encoder (cuentas/ventana ~31ms) |
-| `CFS_REG2` | `[7:0]` | `status` | u8 | `[7]=armed [6]=heartbeat_ok [5]=failsafe` |
-| `CFS_REG3` | `[15:0]` | `imu_roll` | s16 | Roll IMU (s1.14 radianes) |
-| `CFS_REG3` | `[31:16]` | `imu_pitch` | s16 | Pitch IMU (s1.14) |
-| `CFS_REG4` | `[15:0]` | `imu_yaw` | s16 | Yaw IMU (s1.14) |
-| `CFS_REG4` | `[31:16]` | `pid_out[0]` | s16 | PID output eje 0 (Surge, s1.14) |
-| `CFS_REG5` | `[15:0]` | `pid_out[1]` | s16 | PID output eje 1 (Sway) |
-| `CFS_REG5` | `[31:16]` | `pid_out[2]` | s16 | PID output eje 2 (Heave) |
-| `CFS_REG6` | `[15:0]` | `pid_out[3]` | s16 | PID output eje 3 (Roll) |
-| `CFS_REG6` | `[31:16]` | `pid_out[4]` | s16 | PID output eje 4 (Pitch) |
-| `CFS_REG7` | `[15:0]` | `pid_out[5]` | s16 | PID output eje 5 (Yaw) |
-| `CFS_REG7` | `[31:16]` | `depth_cm` | u16 | Profundidad en cm |
+| `CFS_REG2` | `[7:0]` | `status` | u8 | `[7]=armed [6]=heartbeat_ok [5]=failsafe(!armed)` |
+| `CFS_REG2` | `[15:8]` | `hb_cnt` | u8 | Contador de heartbeats recibidos |
+| `CFS_REG2` | `[31:16]` | `imu_roll` | s16 | Roll IMU (s1.14 radianes) |
+| `CFS_REG3` | `[15:0]` | `imu_pitch` | s16 | Pitch IMU (s1.14) |
+| `CFS_REG3` | `[31:16]` | `imu_yaw` | s16 | Yaw IMU (s1.14) |
+| `CFS_REG4` | `[15:0]` | `pid_out[0]` | s16 | PID output eje 0 (Surge, s1.14) |
+| `CFS_REG4` | `[31:16]` | `pid_out[1]` | s16 | PID output eje 1 (Sway) |
+| `CFS_REG5` | `[15:0]` | `pid_out[2]` | s16 | PID output eje 2 (Heave) |
+| `CFS_REG5` | `[31:16]` | `pid_out[3]` | s16 | PID output eje 3 (Roll) |
+| `CFS_REG6` | `[15:0]` | `pid_out[4]` | s16 | PID output eje 4 (Pitch) |
+| `CFS_REG6` | `[31:16]` | `pid_out[5]` | s16 | PID output eje 5 (Yaw) |
+| `CFS_REG7` | `[15:0]` | `depth_cm` | u16 | Profundidad en cm |
+| `CFS_REG7` | `[31:16]` | `depth_temp` | s16 | Temperatura raw (C×10) |
 
 ---
 
@@ -150,8 +157,8 @@ Los índices de coeficiente son: `coeff_idx = motor*6 + eje`.
 
 | GPIO | LED Nexys | Función sugerida |
 |------|-----------|-----------------|
-| 0 | LD0 (R17) | Heartbeat indicador |
-| 1 | LD1 (M13) | Armed indicador |
+| 0 | LD0 (H17) | Heartbeat indicador |
+| 1 | LD1 (K15) | Armed indicador |
 | 2-7 | LD2-LD7 | Libre |
 | 8-15 | LD8-LD15 | Libre |
 
@@ -159,17 +166,23 @@ Los índices de coeficiente son: `coeff_idx = motor*6 + eje`.
 
 ## 7. PWM / Servo Outputs
 
-- **Conector**: PMOD JA (8 pines)
+- **Conector**: PMOD JA (8 pines de señal, borde derecho de la placa, vertical)
 - **Formato**: Servo pulse 1100-1900 µs, período 20 ms (50 Hz)
 - **Neutral**: 1500 µs (motor_duty = 32768)
 - **Rango**: motor_duty 0-65535 → pulso 1100-1900 µs
-- **Safety gate**: SW[0] (R15) debe estar ON + heartbeat activo para que PWM funcione
+- **Safety gate**: SW[0] (J15, silkscreen SW0) debe estar ON + heartbeat activo para que PWM funcione
+- **Verificado en hardware (2026-08-12)**: los 8 pines de señal emiten el walk de 1 kHz (modo test) / pulsos servo
+
+> **Layout del conector PMOD** (vista frontal, según manual de referencia pág. 25):
+> pines **5 y 11 = GND**, pines **6 y 12 = VCC (3.3 V)**.
+> Columna A: 1,2,3,4,5=GND,6=VCC — Columna B: 7,8,9,10,11=GND,12=VCC
 
 ```
-PMOD JA:  JA[0]=G13  JA[1]=B11  JA[2]=A11  JA[3]=D12
-          JA[4]=D13  JA[5]=B18  JA[6]=K18  JA[7]=E15
-          → PWM[0]   PWM[1]     PWM[2]     PWM[3]
-            PWM[4]   PWM[5]     PWM[6]     PWM[7]
+PMOD JA:  JA1=C17 → PWM[0]      JA7=D17 → PWM[4]
+          JA2=D18 → PWM[1]      JA8=E17 → PWM[5]
+          JA3=E18 → PWM[2]      JA9=F18 → PWM[6]
+          JA4=G17 → PWM[3]      JA10=G18 → PWM[7]
+          5=GND  6=VCC          11=GND  12=VCC
 ```
 
 ---
@@ -182,39 +195,46 @@ PMOD JA:  JA[0]=G13  JA[1]=B11  JA[2]=A11  JA[3]=D12
 - **Velocidad**: delta cada ~31.25 ms (3,200,000 ciclos @ 100 MHz)
 - **Sync**: 2-stage synchronizer + false-paths
 
-| Canal | Pin A | Pin B | Conector |
-|-------|-------|-------|----------|
-| ENC0 | H4 | H1 | PMOD JD[0:1] |
-| ENC1 | G1 | H2 | PMOD JD[2:3] |
-| ENC2 | G3 | F3 | PMOD JD[4:5] |
-| ENC3 | E2 | D2 | PMOD JD[6:7] |
-| ENC4 | V10 | V9 | PMOD JC[3:4] |
-| ENC5 | T11 | U9 | 7-seg CF + PMOD JC[7] |
-| ENC6 | T9 | T10 | PMOD JC[8:9] |
-| ENC7 | M18 | P18 | Botones BTNU/BTND |
+> **⚠️ ESTADO ACTUAL (2026-08-12)**: el mapping de encoders NO coincide con lo
+> documentado antes. Tras la auditoría contra el manual de referencia, los pines
+> reales son los siguientes. **Pendiente**: reasignar ENC3/ENC5/ENC6/ENC7 a pines
+> libres de PMOD JC (JC3=J2, JC4=G6, JC7=E7, JC8=J3, JC9=J4, JC10=E6).
+
+| Canal | Pin A | Pin B | Ubicación física REAL |
+|-------|-------|-------|-----------------------|
+| ENC0 | H4 | H1 | PMOD JD1/JD2 ✓ |
+| ENC1 | G1 | H2 | PMOD JD3/JD7 ✓ |
+| ENC2 | G3 | F3 | PMOD JD4/JD10 ✓ |
+| ENC3 | E2 | D2 | ⚠️ **SD_RESET / SD_DAT[3]** (slot SD, no PMOD) |
+| ENC4 | D14 | F16 | PMOD JB1/JB2 (reubicado 2026-08-12) |
+| ENC5 | T11 | G13 | ⚠️ T11 = 7-seg CF; G13 = JB9 |
+| ENC6 | T9 | T10 | ⚠️ T9 = 7-seg AN2; T10 = 7-seg CA |
+| ENC7 | M18 | P18 | ⚠️ Botones BTNU/BTND |
 
 ---
 
 ## 9. SPI (PMOD JB)
 
-| Pin | PMOD | FPGA | Función |
-|-----|------|------|---------|
-| SCK | JB1 | E16 | SPI Clock |
-| MOSI | JB2 | F13 | Master Out |
-| MISO | JB3 | G14 | Master In |
-| CSN | JB4 | H14 | Chip Select |
+| Señal | Pin PMOD | FPGA | Nota |
+|-------|----------|------|------|
+| SCK | JB7 | E16 | SPI Clock ✓ |
+| MOSI | JB8 | F13 | Master Out ✓ |
+| MISO | JB3 | G16 | Master In ✓ (antes G14 ✗) |
+| CSN | JB4 | H14 | Chip Select ✓ |
 
+Otros pines de JB en uso por encoders reubicados: JB1=D14 (ENC_A[4]), JB2=F16 (ENC_B[4]), JB9=G13 (ENC_B[5]). JB10=H16 libre.
 Para flash SPI externa, sensores IMU (MPU9250/ICM-20948), SD card.
 
 ---
 
 ## 10. I2C / TWI (PMOD JC)
 
-| Pin | PMOD | FPGA | Función |
-|-----|------|------|---------|
-| SCL | JC1 | U11 | I2C Clock |
-| SDA | JC2 | U12 | I2C Data |
+| Señal | Pin PMOD | FPGA | Nota |
+|-------|----------|------|------|
+| SCL | JC1 | K1 | I2C Clock ✓ (antes U11 ✗) |
+| SDA | JC2 | F6 | I2C Data ✓ (antes U12 ✗) |
 
+Pines libres de JC: JC3=J2, JC4=G6, JC7=E7, JC8=J3, JC9=J4, JC10=E6 (candidatos para reasignar encoders).
 **Requiere pull-ups externos 4.7 kΩ a 3.3V**. Para sensores de presión (MS5837) y otros I2C.
 
 ---
@@ -223,7 +243,7 @@ Para flash SPI externa, sensores IMU (MPU9250/ICM-20948), SD card.
 
 | IRQ | Fuente | Descripción |
 |-----|--------|-------------|
-| `irq_mei_i` | SW[1] (H6) | Machine External Interrupt — flanco ascendente |
+| `irq_mei_i` | SW[1] (L16) | Machine External Interrupt — flanco ascendente |
 
 El SW[1] se sincroniza con edge-detect: genera un pulso en el flanco de subida.
 
@@ -233,9 +253,12 @@ El SW[1] se sincroniza con edge-detect: genera un pulso en el flanco de subida.
 
 | Control | Pin | Función |
 |---------|-----|---------|
-| SW[0] | R15 | **PWM_ARM** manual (debe estar ON) |
-| SW[1] | H6 | **IRQ** externa (flanco ascendente) |
+| SW[0] | J15 | **PWM_ARM** manual (silkscreen SW0, debe estar ON) |
+| SW[1] | L16 | **IRQ** externa (silkscreen SW1, flanco ascendente) |
+| SW[2..15] | M13,R15,R17,T18,U18,R13,T8,U8,R16,T13,H6,U12,U11,V10 | GPIO inputs (espejo LED, leídos por CPU) |
 | CPU_RESETN | C12 | Reset del CPU (activo bajo, ya sincronizado) |
+
+Nota: SW[8]=T8 y SW[9]=U8 están en el banco 34 del FPGA (VCCO 1.8V) → IOSTANDARD LVCMOS18.
 
 ---
 
@@ -312,7 +335,7 @@ Ubicación: `neorv32/sw/rov_driver/rov_cfs.h`
 #include "rov_cfs.h"
 
 // Inicialización
-rov_init();                          // heartbeat + arm + default mixer
+rov_init();                          // hb timeout 200ms + heartbeat + arm + setpoints=0
 
 // Loop principal (cada 50ms)
 while (1) {

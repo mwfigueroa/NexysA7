@@ -55,7 +55,7 @@ Además, el firmware imprime por UART0 la versión del hardware (CSR `mimpid`) y
 | `debug` | `-Og -g3` | Desensamblado y `.lst` legibles |
 | `release` | `-Os -g0 -DNDEBUG` | Imagen final |
 
-El SoC se sintetiza con `OCD_EN => false`, así que no hay depurador JTAG: `debug` solo cambia la legibilidad de los símbolos, no permite ejecutar paso a paso.
+El SoC se sintetiza con `OCD_EN => true` (JTAG debug habilitado sobre pines del 7-segmentos), así que `debug` solo cambia la legibilidad de los símbolos.
 
 ## Soporte C++
 

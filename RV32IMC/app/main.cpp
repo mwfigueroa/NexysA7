@@ -136,7 +136,8 @@ static void cmd_help() {
         " k <axis> <kp> <ki> <kd>  Set PID gains (s1.14 hex)\n"
         " n <axis> <hex> Set PID current position\n"
         " g <mask>       Enable PID axes (bitmask 0-63)\n"
-        " w, z           Unavailable: native PWM is not connected to the ROV\n"
+        " w, z           Unavailable: motor PWM is driven by the hardware CFS\n"
+        "                servo generator (PMOD JA), not the native PWM unit\n"
         " l [mask]       LED test (default 0xFF)\n"
         " v              Toggle telemetry on/off\n"
         " r              ROV re-init\n"
@@ -152,7 +153,7 @@ static void cmd_info() {
     uint32_t misa = neorv32_cpu_csr_read(CSR_MISA);
     uart_puts("MISA: 0x"); uart_print_hex32(misa); uart_puts("\n");
     uart_puts("IMEM: 64 KiB  DMEM: 32 KiB\n");
-    uart_puts("CFS @ 0xFFFFFF00 (8 regs, ROV control)\n");
+    uart_puts("CFS @ 0xFFEB0000 (8 regs, ROV control, SDK v1.13.3)\n");
 }
 
 static void cmd_status() {
