@@ -48,6 +48,10 @@ static int32_t  g_depth_target_cm;   // target depth in cm
 static int      g_yaw_hold_on;       // yaw-hold active
 static int16_t  g_yaw_target_s114;   // target yaw (s1.14 rad)
 static int      g_failsafe_seen;
+static int      g_motor_test;     // 1 = motor test activo
+static int      g_mt_dir;         // 0 = subida, 1 = bajada
+static int      g_mt_step;
+static uint64_t g_mt_next;
 
 // =============================================================================
 // UART helpers (SDK printf is minimal: no %02X/%ld; use explicit helpers)
@@ -196,6 +200,7 @@ static void cmd_help(void) {
         " o <cm>         Depth-hold: target depth in cm\n"
         " y <hex>        Yaw-hold: target heading (s1.14 rad)\n"
         " f              Free mode: disable depth/yaw hold\n"
+        " w [0|1]        Motor test: barrido triangular 8 motores\n"
         " l [mask]       LED test\n"
         " v              Toggle telemetry\n"
         " r              ROV re-init\n"
@@ -335,6 +340,48 @@ static void cmd_free_mode(void) {
     uart_puts("Free mode: depth/yaw hold disabled, PID off.\n");
 }
 
+// ===========================================================================
+// Motor test: barrido triangular (90% del rango de pulso) por los 8 motores
+// ===========================================================================
+static void cmd_motor_test(int mode) {
+    if (mode) {
+        if (g_motor_test) { uart_puts("Motor test ya activo.\n"); return; }
+        cmd_free_mode();   // el test usa el mixer + setpoint de surge
+        for (int m = 0; m < NUM_MTRS; m++) {
+            rov_set_mixer_coeff(m * 6 + AXIS_SURGE, (int16_t)0x7FFF);
+        }
+        g_motor_test = 1;
+        g_mt_dir     = 0;
+        g_mt_step    = 0;
+        g_mt_next    = neorv32_cpu_get_cycle();
+        uart_puts("Motor test ON: barrido 1140-1860 us en los 8 motores. 'w 0' para parar.\n");
+    } else {
+        if (!g_motor_test) { uart_puts("Motor test no activo.\n"); return; }
+        g_motor_test = 0;
+        rov_set_setpoint(AXIS_SURGE, 0);
+        for (int i = 0; i < 48; i++) {
+            int16_t c = (int16_t)((uint16_t)kDefaultMixer[i] << 8);
+            rov_set_mixer_coeff(i, c);
+        }
+        uart_puts("Motor test OFF: mixer OCTO restaurado, setpoint 0.\n");
+    }
+}
+
+static void motor_test_tick(uint64_t now) {
+    if (!g_motor_test) return;
+    if ((uint64_t)(now - g_mt_next) < ((uint64_t)g_clock_hz * 25u) / 1000u) return;
+    g_mt_next += ((uint64_t)g_clock_hz * 25u) / 1000u;
+
+    int16_t sp = (int16_t)(-14746 + (int32_t)g_mt_step * 737); // ~90% del rango
+    rov_set_setpoint(AXIS_SURGE, sp);
+
+    if (g_mt_dir == 0) {
+        if (++g_mt_step >= 40) g_mt_dir = 1;
+    } else {
+        if (--g_mt_step <= 0) g_mt_dir = 0;
+    }
+}
+
 static void cmd_leds(uint32_t mask) {
     for (int i = 0; i < 3; i++) {
         neorv32_gpio_port_set(mask & 0xFFFF);
@@ -437,6 +484,7 @@ static void process_command(void) {
     case 'o': { s++; cmd_depth_hold(parse_int(&s)); break; }
     case 'y': { s++; cmd_yaw_hold((int16_t)parse_hex(&s)); break; }
     case 'f': cmd_free_mode(); break;
+    case 'w': { s++; cmd_motor_test(parse_int(&s) != 0); break; }
     case 'l': {
         s++;
         while (*s == ' ') s++;
@@ -526,6 +574,7 @@ int main(void) {
         // --- 50 ms heartbeat + 20 Hz control ---
         uint64_t now = neorv32_cpu_get_cycle();
         service_heartbeat();
+        motor_test_tick(now);   // paso de 25 ms del barrido de motores
         if (elapsed_ms(now, g_last_ctrl, HEARTBEAT_MS)) {
             g_last_ctrl = now;
             control_tick();
