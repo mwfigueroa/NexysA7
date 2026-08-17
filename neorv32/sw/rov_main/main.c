@@ -17,6 +17,7 @@
 #include <neorv32.h>
 #include "rov_cfs.h"
 #include "sensors.h"
+#include "mavlink.h"
 
 #define NUM_AXES       6
 #define NUM_MTRS       8
@@ -203,6 +204,7 @@ static void cmd_help(void) {
         " y <hex>        Yaw-hold: target heading (s1.14 rad)\n"
         " f              Free mode: disable depth/yaw hold\n"
         " w [0|1]        Motor test: barrido triangular 8 motores\n"
+        " q on|off       MAVLink mode (telemetria QGroundControl)\n"
         " l [mask]       LED test\n"
         " v              Toggle telemetry\n"
         " r              ROV re-init\n"
@@ -340,6 +342,13 @@ static void cmd_free_mode(void) {
     g_yaw_hold_on   = 0;
     rov_enable_pid(0);
     uart_puts("Free mode: depth/yaw hold disabled, PID off.\n");
+}
+
+// version sin print para los handlers de MAVLink
+void control_free_mode(void) {
+    g_depth_hold_on = 0;
+    g_yaw_hold_on   = 0;
+    rov_enable_pid(0);
 }
 
 // ===========================================================================
@@ -507,6 +516,17 @@ static void process_command(void) {
     case 'y': { s++; cmd_yaw_hold((int16_t)parse_hex(&s)); break; }
     case 'f': cmd_free_mode(); break;
     case 'w': { s++; cmd_motor_test(parse_int(&s) != 0); break; }
+    case 'q': {
+        s++;
+        int on = -1;
+        while (*s == ' ') s++;
+        if ((*s >= '0' && *s <= '9') || *s == '-') on = parse_int(&s);
+        else if (s[0] == 'o' && s[1] == 'n')  on = 1;
+        else if (s[0] == 'o' && s[1] == 'f')  on = 0;
+        if (on == -1) { uart_puts("Uso: q on | q off | q 1 | q 0\n"); break; }
+        mavlink_enable(on);
+        break;
+    }
     case 'l': {
         s++;
         while (*s == ' ') s++;
@@ -563,6 +583,7 @@ int main(void) {
     // --- Sensores primero (init lento; si se hiciera tras arm, el failsafe
     //     desarmaría al ROV antes de arrancar el loop) ---
     sensors_init();
+    mavlink_init();
 
     // --- ROV init: hb timeout 200ms, heartbeat, arm, setpoints neutral ---
     uart_puts("CFS: initializing ROV subsystem...\n");
@@ -580,6 +601,7 @@ int main(void) {
         // --- UART RX ---
         if (neorv32_uart0_char_received()) {
             char c = (char)neorv32_uart0_char_received_get();
+            mavlink_parse((uint8_t)c);   // frames MAVLink en paralelo a la consola
             if (c == '\r' || c == '\n') {
                 rx_buf[rx_idx] = '\0';
                 neorv32_uart0_puts("\r\n");
@@ -597,6 +619,7 @@ int main(void) {
         uint64_t now = neorv32_cpu_get_cycle();
         service_heartbeat();
         motor_test_tick(now);   // paso de 25 ms del barrido de motores
+        mavlink_tick(now);      // telemetria MAVLink (solo si 'q on')
         if (elapsed_ms(now, g_last_ctrl, HEARTBEAT_MS)) {
             g_last_ctrl = now;
             control_tick();
@@ -608,8 +631,8 @@ int main(void) {
             neorv32_gpio_pin_toggle(0);
         }
 
-        // --- Telemetry ---
-        if (g_telem_enabled && elapsed_ms(now, g_last_telem, TELEM_MS)) {
+        // --- Telemetry (suprimida en modo MAVLink para no ensuciar el stream) ---
+        if (g_telem_enabled && !mavlink_is_enabled() && elapsed_ms(now, g_last_telem, TELEM_MS)) {
             g_last_telem = now;
             print_telemetry();
         }
