@@ -1,12 +1,18 @@
 # Nexys A7 + ADP2230 — Sesión 5-6 Agosto 2026
 
+> **Corrección 2026-08-12**: el "❌ UART RX" de abajo era un problema del
+> firmware del frecuencímetro (`src/top.v`), NO del hardware. Con el NEORV32
+> (RV32IMC + bootloader + consola interactiva de `rov_main`) el RX por FTDI→C4
+> funciona perfecto — verificado con comandos `s`, `w 1`, `k`, `o`, etc.
+
 ## Estado Final
 
 ### Nexys A7
 - ✅ JTAG: XC7A100T, Flash QSPI programada
 - ✅ Frecuencímetro calibrado 0.13%
 - ✅ UART TX 115200, Display 7-seg
-- ❌ UART RX (hardware FTDI→C4)
+- ✅ UART RX (FTDI→C4): funciona con NEORV32 (validado 2026-08-12);
+  ⚠️ el frecuencímetro (`src/top.v`) tenía su RX roto en firmware
 
 ### ADP2230
 - ✅ AWG + Scope + Logic Analyzer
