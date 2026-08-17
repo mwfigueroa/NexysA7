@@ -601,17 +601,18 @@ int main(void) {
         // --- UART RX ---
         if (neorv32_uart0_char_received()) {
             char c = (char)neorv32_uart0_char_received_get();
-            mavlink_parse((uint8_t)c);   // frames MAVLink en paralelo a la consola
+            mavlink_parse((uint8_t)c);
+            if (mavlink_in_frame()) continue;  // bytes de frame: no tocan la consola
             if (c == '\r' || c == '\n') {
                 rx_buf[rx_idx] = '\0';
                 neorv32_uart0_puts("\r\n");
                 process_command();
                 uart_puts("CMD:> ");
             } else if (c == '\b' || c == 0x7F) {
-                if (rx_idx > 0) { rx_idx--; neorv32_uart0_puts("\b \b"); }
+                if (rx_idx > 0) { rx_idx--; if (!mavlink_is_enabled()) neorv32_uart0_puts("\b \b"); }
             } else if (rx_idx < 127) {
                 rx_buf[rx_idx++] = c;
-                neorv32_uart0_putc(c);
+                if (!mavlink_is_enabled()) neorv32_uart0_putc(c);  // sin eco en modo MAVLink
             }
         }
 

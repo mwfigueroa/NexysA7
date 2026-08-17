@@ -13,5 +13,6 @@ void mavlink_tick(uint64_t now_cycles);
 void mavlink_parse(uint8_t c);
 void mavlink_enable(int on);
 int  mavlink_is_enabled(void);
+int  mavlink_in_frame(void);   // 1 si hay un frame MAVLink en recepcion
 
 #endif

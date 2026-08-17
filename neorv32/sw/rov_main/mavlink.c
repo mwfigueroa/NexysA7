@@ -273,6 +273,8 @@ void mavlink_enable(int on) {
 
 int mavlink_is_enabled(void) { return g_on; }
 
+int mavlink_in_frame(void) { return rx_state != 0; }
+
 void mavlink_tick(uint64_t now) {
     if (!g_on) return;
 
